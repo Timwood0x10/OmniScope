@@ -18,14 +18,17 @@
 //!
 //! Usage:
 //!   ```zig
-//!   var viz = try graph_visualizer.GraphVisualizer.init(allocator);
+//!   var viz = try GraphVisualizer.init(allocator);
 //!   defer viz.deinit();
 //!
-//!   // Export memory graph
-//!   try viz.exportMemoryGraph(&memory_graph, "omniscope_memory.html");
+//!   // Export issues as JSON
+//!   try viz.exportIssuesJson(&issues, "omniscope_issues.json");
 //!
-//!   // Export call graph
-//!   try viz.exportCallGraph(&call_graph, "omniscope_callgraph.html");
+//!   // Export from pre-built JSON string
+//!   try viz.exportFromJson(json_str, "omniscope_report.html");
+//!
+//!   // Export issues as interactive HTML
+//!   try viz.exportIssuesHtml(&issues, "omniscope_report.html");
 //!   ```
 
 const std = @import("std");
@@ -52,6 +55,7 @@ pub const GraphKind = enum {
     malloc_unchecked,
     null_dereference,
     invalid_free,
+    write_to_immutable,
     borrow_escape,
     ffi_unsafe_call,
     unchecked_return,
@@ -198,9 +202,9 @@ pub const GraphVisualizer = struct {
 
         var first_kc = true;
         const kinds_ordered = [_][]const u8{
-            "double_free",         "use_after_free",   "borrow_escape",
-            "memory_leak",         "malloc_unchecked", "invalid_free",
-            "cross_language_leak", "null_dereference",
+            "double_free",        "use_after_free",      "borrow_escape",
+            "memory_leak",        "malloc_unchecked",    "invalid_free",
+            "write_to_immutable", "cross_language_leak", "null_dereference",
         };
         for (kinds_ordered) |ks| {
             if (kind_counts.get(ks)) |cnt| {

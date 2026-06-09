@@ -25,7 +25,7 @@
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
 const safe = @import("../../ir/llvm_safe.zig"); // Issue2/3: Standardized LLVM helpers
-const word_boundary = @import("../../utils/word_boundary.zig");
+const ir_store_mod = @import("../../ir/ir_store.zig");
 // Issue2 FIX: Import helper for standardized CallInst argument counting
 const getCallInstArgCount = @import("../../ir/llvm_safe.zig").getCallInstArgCount;
 
@@ -39,22 +39,29 @@ const IssueKind = @import("../../diag/issue.zig").IssueKind;
 const Severity = @import("../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
 const zone_classifier = @import("../../semantics/zone_classifier.zig");
-const lang_classifier = @import("ffi_language_classifier.zig");
 const FPWhitelist = @import("../filter/fp_whitelist.zig");
 const FPPrecisionGuard = @import("../filter/fp_precision_guard.zig");
 comptime {
     _ = FPPrecisionGuard.PrecisionMetrics;
 } // Force test discovery
-const NoiseReduction = @import("noise_reduction.zig");
+const NoiseReduction = @import("noise/noise_reduction.zig");
 const noise_filter = @import("../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../ir/debug_info.zig").DebugInfoUtils;
 const call_graph_mod = @import("../../semantics/call_graph.zig");
+
+const CandidateBuilder = @import("resource/issue_candidate_builder.zig").CandidateBuilder;
+const IssueCandidate = @import("resource/issue_candidate_builder.zig").IssueCandidate;
+const IssueVerifier = @import("resource/issue_verifier.zig").IssueVerifier;
+const Confidence = @import("callback_escape_report.zig").Confidence;
 
 // : Integrated Hook system for semantic analysis.
 // Replaces hardcoded C_RETAINING_FUNCTIONS with centralized patterns + hooks.
 const hooks = @import("../../registry/hooks.zig");
 const registry = @import("../../registry/semantic_registry.zig").SemanticRegistry;
-const ptr_types = @import("ptr_lifetime_types.zig");
+
+// T3.1: Parallel execution support for per-function analysis
+const parallel = @import("../../pipeline/parallel.zig");
+const ptr_types = @import("ptr_lifetime/ptr_lifetime_types.zig");
 
 // Reporting functions (extracted to separate module)
 const cb_report = @import("callback_escape_report.zig");
@@ -63,493 +70,47 @@ const cb_report = @import("callback_escape_report.zig");
 pub const CGoCallInfo = cb_report.CGoCallInfo;
 pub const CallbackEscapeInfo = cb_report.CallbackEscapeInfo;
 
-/// Types of callback escaping violations detected.
-pub const EscapeViolation = enum(u8) {
-    /// Go pointer passed to C without KeepAlive guard
-    go_pointer_no_keepalive,
-    /// C.CBytes result passed to retaining function
-    cbytes_escape,
-    /// unsafe.Pointer used across FFI boundary without lifetime guarantee
-    unsafeptr_dangling_risk,
-    /// malloc without corresponding free (leak)
-    malloc_without_free,
-    /// free without matching malloc (double-free risk)
-    free_without_malloc,
-};
+// Types and helpers from centralized types module
+const cb_types = @import("../../types/callback_escape_types.zig");
+pub const EscapeViolation = cb_types.EscapeViolation;
+pub const EscapePattern = cb_types.EscapePattern;
+pub const EscapeStats = cb_types.EscapeStats;
+pub const AllocSiteInfo = cb_types.AllocSiteInfo;
+pub const FreeSiteInfo = cb_types.FreeSiteInfo;
+const CGO_GLUE_PATTERNS = cb_types.CGO_GLUE_PATTERNS;
+const GO_RUNTIME_SAFETY_FUNCTIONS = cb_types.GO_RUNTIME_SAFETY_FUNCTIONS;
+const C_RETAINING_FUNCTIONS = cb_types.C_RETAINING_FUNCTIONS;
+const CGO_ENHANCED_PATTERNS = cb_types.CGO_ENHANCED_PATTERNS;
+const GO_UNSAFE_PATTERNS = cb_types.GO_UNSAFE_PATTERNS;
+const isCgoBoundary = cb_types.isCgoBoundary;
+const isGoUnsafeOperation = cb_types.isGoUnsafeOperation;
+const detectGoMemoryPattern = cb_types.detectGoMemoryPattern;
+const hasCgoEvidence = cb_types.hasCgoEvidence;
+const isCgoBoundaryByLinkage = cb_types.isCgoBoundaryByLinkage;
+const isCgoBoundaryFromLLVM = cb_types.isCgoBoundaryFromLLVM;
+const isCgoGlueByPattern = cb_types.isCgoGlueByPattern;
+const isGoSafetyFunction = cb_types.isGoSafetyFunction;
+const mayRetainInCLanguageAware = cb_types.mayRetainInCLanguageAware;
+const isCBytesPattern = cb_types.isCBytesPattern;
+const isCBytesEscapeWithDataFlow = cb_types.isCBytesEscapeWithDataFlow;
+const isUnsafePtrConversion = cb_types.isUnsafePtrConversion;
+const isRegisterNativesPattern = cb_types.isRegisterNativesPattern;
+const isPthreadCreatePattern = cb_types.isPthreadCreatePattern;
+const isCallbackReceiver = cb_types.isCallbackReceiver;
+const validate_callback_signature = cb_types.validate_callback_signature;
+const isGlobalVariable = cb_types.isGlobalVariable;
+const isLikelyCallbackFunction = cb_types.isLikelyCallbackFunction;
+const isGenericCallbackReceiver = cb_types.isGenericCallbackReceiver;
+const isFactoryFunction = cb_types.isFactoryFunction;
+const isDestructorFunction = cb_types.isDestructorFunction;
+const isTransferFunction = cb_types.isTransferFunction;
 
-/// Classification of a detected escape pattern.
-pub const EscapePattern = struct {
-    violation_type: EscapeViolation,
-    confidence: f32,
-    func_name: []const u8,
-    callee_name: []const u8,
-    description: []const u8,
-};
-
-/// Statistics for the callback escape detector.
-pub const EscapeStats = struct {
-    total_functions_analyzed: u32 = 0,
-    go_cgo_boundaries_found: u32 = 0,
-    keepalive_missing: u32 = 0,
-    cbytes_escapes: u32 = 0,
-    unsafeptr_risks: u32 = 0,
-    malloc_leaks: u32 = 0,
-    free_orphans: u32 = 0,
-    callback_escapes: u32 = 0,
-
-    pub fn formatSummary(self: EscapeStats, writer: anytype) !void {
-        try writer.writeAll("\n╔══════════════════════════════════════╗\n");
-        try writer.writeAll("║   CALLBACK ESCAPE DETECTOR SUMMARY ║\n");
-        try writer.writeAll("╠══════════════════════════════════════╣\n");
-        try writer.print("║  Functions analyzed:      {d:>8}     ║\n", .{self.total_functions_analyzed});
-        try writer.print("║  CGo boundaries found:    {d:>8}     ║\n", .{self.go_cgo_boundaries_found});
-        try writer.print("║  Missing KeepAlive:       {d:>8}     ║\n", .{self.keepalive_missing});
-        try writer.print("║  CBytes escapes:          {d:>8}     ║\n", .{self.cbytes_escapes});
-        try writer.print("║  Callback escapes:        {d:>8}     ║\n", .{self.callback_escapes});
-        try writer.print("║  Unsafe.Pointer risks:    {d:>8}     ║\n", .{self.unsafeptr_risks});
-        try writer.print("║  Malloc-without-free:     {d:>8}     ║\n", .{self.malloc_leaks});
-        try writer.print("║  Free-orphan calls:       {d:>8}     ║\n", .{self.free_orphans});
-        try writer.writeAll("╚══════════════════════════════════════╝\n");
-    }
-};
-
-// ============================================================================
-// Go CGo Pattern Detection
-// ============================================================================
-
-/// Functions that indicate cgo glue code (compiler-generated).
-const CGO_GLUE_PATTERNS = &[_][]const u8{
-    "_cgo_",
-    "_Cfunc_",
-    "_cgo_gotypes",
-    "crosscall2",
-};
-
-/// Known Go runtime functions related to cgo safety.
-const GO_RUNTIME_SAFETY_FUNCTIONS = &[_][]const u8{
-    "runtime.KeepAlive",
-    "runtime_Pin",
-    "runtime_Unpin",
-    "runtime_cgocall",
-};
-
-/// C standard library functions that unconditionally retain pointers (escape analysis).
-/// These functions store pointers for later use beyond the caller's lifetime.
-const C_RETAINING_FUNCTIONS = &[_][]const u8{
-    "pthread_create",          "signal",           "sigaction",
-    "atexit",                  "on_exit",          "SDL_SetEventCallback",
-    "glfwSetCallback",         "curl_easy_setopt", "RegisterNatives",
-    "PyCapsule_SetDestructor", "dlopen",
-};
-
-/// Enhanced Go cgo boundary patterns (v0.1.8)
-/// Includes standard library, runtime, and common third-party patterns.
-const CGO_ENHANCED_PATTERNS = &[_][]const u8{
-    // Standard cgo glue (compiler-generated)
-    "_cgo_",
-    "_Cfunc_",
-    "_cgo_gotypes",
-    "crosscall2",
-
-    // Go runtime cgo support
-    "runtime_cgocall",
-    "runtime_iscgo",
-    "_cgo_runtime_cgocall",
-
-    // Common Go package prefixes
-    "golang_org.",
-    "google.golang.org.",
-    "github.com/",
-
-    // Go-specific FFI patterns
-    "__cgocallback",
-    "cgoexp_",
-    "_cgo_exp_",
-
-    // JNI/Python interop via cgo
-    "Java_", // cgo-JNI bridge
-    "PyInit_", // cgo-Python bridge
-    "Cython_", // cgo-Cython bridge
-};
-
-/// Go unsafe package patterns
-const GO_UNSAFE_PATTERNS = &[_][]const u8{
-    "unsafe.Pointer",
-    "unsafe.String",
-    "unsafe.Slice",
-    "unsafe.SliceData",
-    "unsafe.StringData",
-    "Add",
-    "Alignof",
-    "Offsetof",
-    "Sizeof",
-};
-
-/// Check if a function name indicates cgo boundary code.
-pub fn isCgoBoundary(func_name: []const u8) bool {
-    // First check enhanced patterns
-    for (CGO_ENHANCED_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
-    }
-
-    for (CGO_GLUE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) return true;
-    }
-
-    // Cgo "C." prefix matching with stricter rules to avoid false positives:
-    // - Must be at start of function name OR preceded by a package path (e.g., "main.C.")
-    // - NOT in the middle of a name like "AC.BMethod" or "MC.function"
-    const c_dot_idx = std.mem.indexOf(u8, func_name, "C.");
-    if (c_dot_idx) |idx| {
-        const valid = idx == 0 or
-            (idx >= 2 and func_name[idx - 1] == '.');
-        if (valid) return true;
-    }
-
-    return false;
-}
-
-/// Check if instruction involves Go unsafe operations
-/// Enhanced with robust null safety and malformed IR protection
-pub fn isGoUnsafeOperation(inst: c.LLVMValueRef) bool {
-    // Safety check: ensure instruction is valid (Zig idiom: ptr == null)
-    if (inst == null) return false;
-
-    const called_val = c.LLVMGetCalledValue(inst);
-
-    // Null safety: handle LLVM API failure gracefully
-    if (called_val == null) {
-        return false;
-    }
-
-    const callee_name_ptr = c.LLVMGetValueName(called_val);
-
-    // Null safety: handle empty or invalid function names
-    if (callee_name_ptr == null) {
-        return false;
-    }
-
-    // Safe span conversion with length validation
-    const callee_name = std.mem.span(callee_name_ptr);
-
-    // Additional safety: skip empty names to prevent false positives
-    if (callee_name.len == 0) return false;
-
-    // Pattern matching with bounds checking
-    for (GO_UNSAFE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, callee_name, pattern) != null) return true;
-    }
-
-    return false;
-}
-
-/// Detect Go-specific memory management patterns that may cause issues
-pub fn detectGoMemoryPattern(func_name: []const u8) enum {
-    /// Standard Go memory (GC-managed, safe)
-    safe,
-    /// Uses runtime.KeepAlive (properly guarded)
-    keepalive_guarded,
-    /// Missing KeepAlive (potential GC issue)
-    missing_keepalive,
-    /// Uses C.malloc/C.free directly (manual memory)
-    manual_c_memory,
-    /// Mixed pattern (complex analysis needed)
-    mixed,
-} {
-    // Check for KeepAlive usage
-    if (std.mem.indexOf(u8, func_name, "KeepAlive") != null)
-        return .keepalive_guarded;
-
-    // Check for direct C memory functions
-    const has_malloc = std.mem.indexOf(u8, func_name, "C.malloc") != null or
-        std.mem.indexOf(u8, func_name, "C.calloc") != null;
-    const has_free = std.mem.indexOf(u8, func_name, "C.free") != null;
-
-    if (has_malloc and has_free) return .manual_c_memory;
-    if (has_malloc or has_free) return .mixed;
-
-    // Default to safe for pure Go code
-    return .safe;
-}
-
-/// Checks if a function name provides sufficient Go-specific evidence to be
-/// considered a cgo boundary function.
-///
-/// This helper consolidates the three-tier Go evidence check used across multiple
-/// linkage type validations in isCgoBoundaryFromLLVM():
-///   1. Known cgo glue patterns (isCgoGlueByPattern)
-///   2. Go runtime prefix (_cgo_)
-///   3. Go callback marker (__cgocallback)
-///
-/// Using this single function ensures consistency and reduces maintenance overhead.
-/// If the evidence requirements change, only this one place needs updating.
-///
-/// Arguments:
-///   func_name - The LLVM function name to check
-///
-/// Returns:
-///   true if the function name contains Go-specific cgo evidence
-fn hasCgoEvidence(func_name: []const u8) bool {
-    return isCgoGlueByPattern(func_name) or
-        std.mem.indexOf(u8, func_name, "_cgo_") != null or
-        std.mem.indexOf(u8, func_name, "__cgocallback") != null;
-}
-
-/// Unified CGO boundary detection by LLVM linkage type and name evidence.
-///
-/// Consolidates all cgo boundary checks into a single helper that:
-///   1. Checks if the linkage type is one of the known cgo linkage types
-///      (ExternalWeak, Common, External, WeakAny/ODR, LinkOnceAny/ODR)
-///   2. Requires additional Go-specific evidence for non-obvious linkages
-///      (prevents false positives in non-Go projects)
-///
-/// This replaces the duplicated logic previously in isCgoBoundaryFromLLVM()
-/// where each linkage type had its own copy of the evidence check.
-///
-/// Arguments:
-///   linkage - The LLVM linkage type of the function
-///   func_name - The function name to check for Go patterns
-///
-/// Returns:
-///   true if the function should be treated as a cgo boundary
-fn isCgoBoundaryByLinkage(linkage: c.LLVMLinkage, func_name: []const u8) bool {
-    // All these linkage types are commonly used in cgo glue code,
-    // but can also appear in non-Go projects (e.g., weak symbols, COMDAT).
-    // Therefore, we require additional Go-specific evidence to reduce false positives.
-    const is_cgo_linkage = (linkage == c.LLVMExternalWeakLinkage or
-        linkage == c.LLVMCommonLinkage or
-        linkage == c.LLVMExternalLinkage or
-        linkage == c.LLVMWeakAnyLinkage or
-        linkage == c.LLVMWeakODRLinkage or
-        linkage == c.LLVMLinkOnceAnyLinkage or
-        linkage == c.LLVMLinkOnceODRLinkage);
-
-    return is_cgo_linkage and hasCgoEvidence(func_name);
-}
-
-/// Check if a function is a cgo boundary using LLVM metadata.
-///
-/// Uses LLVM linkage type and declaration status to identify
-/// compiler-generated cgo glue functions more precisely than string matching.
-///
-/// Delegates to isCgoBoundaryByLinkage() for all declaration-based checks,
-/// ensuring consistent evidence requirements across all linkage types.
-pub fn isCgoBoundaryFromLLVM(func: c.LLVMValueRef) bool {
-    if (func == null) return false;
-
-    const func_name_ptr = c.LLVMGetValueName(func);
-    if (@intFromPtr(func_name_ptr) == 0) return false;
-    const func_name = std.mem.span(func_name_ptr);
-
-    if (c.LLVMIsDeclaration(func) != 0) {
-        // Unified check: all cgo-relevant linkage types + Go evidence
-        const linkage = c.LLVMGetLinkage(func);
-        if (isCgoBoundaryByLinkage(linkage, func_name)) return true;
-    } else {
-        if (isCgoGlueByPattern(func_name)) return true;
-
-        const section = c.LLVMGetSection(func);
-        if (@intFromPtr(section) != 0) {
-            const section_name = std.mem.span(section);
-            if (std.mem.indexOf(u8, section_name, ".text") != null) {
-                if (isCgoGlueByPattern(func_name)) return true;
-            }
-        }
-    }
-
-    return false;
-}
-
-fn isCgoGlueByPattern(name: []const u8) bool {
-    for (CGO_GLUE_PATTERNS) |pattern| {
-        if (std.mem.indexOf(u8, name, pattern) != null) return true;
-    }
-    if (std.mem.indexOf(u8, name, "cgocall") != null) return true;
-    if (std.mem.indexOf(u8, name, "_cgo_") != null) return true;
-    if (std.mem.startsWith(u8, name, "crosscall")) return true;
-    return false;
-}
-
-/// Check if a function is a Go runtime safety function (KeepAlive etc).
-pub fn isGoSafetyFunction(callee_name: []const u8) bool {
-    for (GO_RUNTIME_SAFETY_FUNCTIONS) |fn_name| {
-        if (std.mem.indexOf(u8, callee_name, fn_name) != null) return true;
-    }
-    return false;
-}
-
-/// R7.1-3: Language-aware pointer retention check.
-///
-/// For **Go callers** (cgo boundary): Full detection — set_/add_/register_ prefixes
-///   indicate the callee may hold the pointer beyond the call (Go runtime can't
-///   see C memory, so KeepAlive is needed).
-///
-/// For **C callers**: Only detect REAL escapes — storing to global variables,
-///   passing to async callbacks (pthread_create, signal), etc.
-///   Plain func(&local) in C is standard borrowing — NOT an escape.
-///
-/// For **Rust callers**: Only detect escapes inside unsafe blocks.
-///
-/// For **Zig callers**: Skip entirely (compile-time lifetime guarantees).
-fn mayRetainInCLanguageAware(callee_name: []const u8, caller_is_cgo: bool) bool {
-    // Always-retaining functions regardless of language
-    for (C_RETAINING_FUNCTIONS) |fn_name| {
-        if (std.mem.indexOf(u8, callee_name, fn_name) != null) return true;
-    }
-
-    if (caller_is_cgo) {
-        // Go cgo: broader prefix matching (set_, add_, register_ may hold pointers)
-        const retaining_prefixes = [_][]const u8{
-            "register_", "set_", "add_", "subscribe_",
-        };
-        for (retaining_prefixes) |prefix| {
-            if (std.mem.startsWith(u8, callee_name, prefix)) return true;
-        }
-    }
-    // NOTE: For C/Rust/Zig callers, C_RETAINING_FUNCTIONS above already covers
-    // all truly escaping patterns (pthread_create, signal, atexit, etc.).
-    // Functions like set_error(), add_data(), register_callback() are NOT
-    // real escapes — they just write through a pointer parameter and return
-    // before the caller's stack frame ends.
-
-    return false;
-}
-
-/// Detect C.CBytes pattern in function names.
-/// Uses word boundary matching to prevent false positives from names like
-/// "myCBytesHandler" or "CBytesUtils".
-///
-/// V2 ENHANCEMENT: Now also supports data flow verification via CallGraph.
-/// Use `isCBytesEscapeWithDataFlow()` for more precise detection that checks
-/// whether the CBytes return value actually reaches a retaining FFI call.
-pub fn isCBytesPattern(name: []const u8) bool {
-    // Use word boundary for precise matching (not substring)
-    return word_boundary.isWordBoundaryMatch(name, "C.CBytes") or
-        word_boundary.isWordBoundaryMatch(name, "C.GoString") or
-        word_boundary.isWordBoundaryMatch(name, "C.GoStringN");
-}
-
-/// Enhanced CBytes escape detection with data flow analysis.
-///
-/// This V2 function combines:
-/// 1. Name-based pattern matching (isCBytesPattern) - fast pre-filter
-/// 2. Data flow verification via MemoryGraph - confirms return value is used in FFI context
-///
-/// When to use:
-///   - Use this instead of isCBytesPattern() when you have access to ctx (PassContext)
-///   - Provides fewer false positives than name-only checking
-///
-/// Example of false positive avoided by data flow check:
-/// ```go
-/// func safeUsage() {
-///     buf := C.CBytes("hello")  // Matches pattern ✓
-///     defer C.free(unsafe.Pointer(buf))  // Properly freed, NOT an escape ✗
-/// }
-/// ```
-/// vs true positive:
-/// ```go
-/// func dangerousUsage() {
-///     buf := C.CBytes("hello")  // Matches pattern ✓
-///     C.storeGlobally(buf)      // Retained by C code → ESCAPE ✓
-/// }
-/// ```
-pub fn isCBytesEscapeWithDataFlow(
-    callee_name: []const u8,
-    ptr_val: u64,
-    ctx: *const PassContext,
-) bool {
-    // Step 1: Fast pre-filter by name (avoids expensive graph traversal for non-CBytes calls)
-    if (!isCBytesPattern(callee_name)) return false;
-
-    // Step 2: Check if the pointer value is tracked as passed to any FFI call
-    // This uses MemoryGraph's cross-function tracking to verify actual data flow
-    const mg = &ctx.memory_graph;
-
-    // Check if this pointer is passed as argument to any external/FFI function
-    if (mg.isPassedAsArg(ptr_val)) {
-        // The pointer from C.Bytes is actually used in a call → potential escape
-        return true;
-    }
-
-    // Step 3: Check if pointer is stored to global (another form of escape)
-    if (mg.isStoredToGlobal(ptr_val)) {
-        return true;
-    }
-
-    // Name matched but no data flow evidence found → likely safe usage
-    return false;
-}
-
-/// Detect unsafe.Pointer conversion pattern.
-pub fn isUnsafePtrConversion(name: []const u8) bool {
-    return std.mem.indexOf(u8, name, "unsafe.Pointer") != null or
-        std.mem.indexOf(u8, name, "uintptr") != null;
-}
-
-/// Detect JNI RegisterNatives pattern for callback signature validation.
-pub fn isRegisterNativesPattern(name: []const u8) bool {
-    return std.mem.indexOf(u8, name, "RegisterNatives") != null;
-}
-
-/// Detect pthread_create pattern for callback thread safety.
-pub fn isPthreadCreatePattern(name: []const u8) bool {
-    return std.mem.indexOf(u8, name, "pthread_create") != null;
-}
-
-/// Check if function is a known callback receiver that requires type-safe pointers.
-pub fn isCallbackReceiver(name: []const u8) bool {
-    const receivers = [_][]const u8{
-        "RegisterNatives",  "SetCallback",            "set_callback",
-        "pthread_create",   "pthread_setcancelstate", "signal",
-        "sigaction",        "SDL_SetEventCallback",   "glfwSetCallback",
-        "curl_easy_setopt",
-    };
-    for (receivers) |r| {
-        if (std.mem.indexOf(u8, name, r) != null) return true;
-    }
-    return false;
-}
-
-/// Validate callback function pointer has compatible signature.
-/// This is a heuristic check based on naming conventions.
-pub fn validate_callback_signature(func_name: []const u8, callback_arg_type: []const u8) bool {
-    if (callback_arg_type.len == 0) return false;
-    if (std.mem.indexOf(u8, func_name, "RegisterNatives") != null) {
-        if (std.mem.indexOf(u8, callback_arg_type, "JNINativeMethod") != null) return true;
-        if (std.mem.indexOf(u8, callback_arg_type, "void") != null and
-            std.mem.indexOf(u8, callback_arg_type, "*") != null) return true;
-        return false;
-    }
-    if (std.mem.indexOf(u8, func_name, "pthread_create") != null) {
-        if (std.mem.indexOf(u8, callback_arg_type, "void*") != null) return true;
-        if (std.mem.indexOf(u8, callback_arg_type, "void") != null and
-            std.mem.indexOf(u8, callback_arg_type, "*") != null) return true;
-        return false;
-    }
-    if (std.mem.indexOf(u8, func_name, "signal") != null or
-        std.mem.indexOf(u8, func_name, "sigaction") != null)
-    {
-        if (std.mem.indexOf(u8, callback_arg_type, "void") != null and
-            std.mem.indexOf(u8, callback_arg_type, "int") != null) return true;
-        return false;
-    }
-    const generic_patterns = [_][]const u8{
-        "atexit",  "qsort",              "bsearch",
-        "on_exit", "pthread_key_create",
-    };
-    for (generic_patterns) |p| {
-        if (std.mem.indexOf(u8, func_name, p) != null) {
-            if (callback_arg_type.len > 0 and
-                (std.mem.indexOf(u8, callback_arg_type, "void") != null or
-                    std.mem.indexOf(u8, callback_arg_type, "*") != null))
-            {
-                return true;
-            }
-            return false;
-        }
-    }
-    return false;
-}
+// Core analysis functions (extracted to reduce file size)
+const cb_core = @import("callback_escape/callback_escape_core.zig");
+const scanInstruction = cb_core.scanInstruction;
+const scanCallbackEscapes = cb_core.scanCallbackEscapes;
+const isBorrowedCallbackArg = cb_core.isBorrowedCallbackArg;
+const countMallocFreeSites = cb_core.countMallocFreeSites;
 
 // ============================================================================
 // Main Pass
@@ -571,7 +132,6 @@ pub const CallbackEscapePass = struct {
         if (ctx.module == null) return;
 
         // R8.2-d: Consume cross-language edges from CallGraphPass.
-        // Cross-lang edges help identify Go→C cgo boundaries for callback escape detection.
         const cross_edges = ctx.getCrossLangEdges();
         var go_cgo_edge_count: u32 = 0;
         for (cross_edges) |edge| {
@@ -584,101 +144,177 @@ pub const CallbackEscapePass = struct {
         }
 
         const mod = ctx.module.?.raw;
-        var func = c.LLVMGetFirstFunction(mod);
-        if (@intFromPtr(func) == 0) return;
+        const first_func = c.LLVMGetFirstFunction(mod);
+        if (@intFromPtr(first_func) == 0) return;
 
         const noise_config = NoiseReduction.NoiseReductionConfig{ .focus_user_code = true };
         var stats = EscapeStats{};
 
-        // Initialize Hook system for semantic analysis.
-        // Hooks provide language-specific detection beyond pattern matching.
         try hooks.initHookStates(ctx.allocator);
         defer hooks.deinitHookStates();
 
-        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            if (c.LLVMIsDeclaration(func) != 0) {
-                const func_name_raw = c.LLVMGetValueName(func);
-                const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
-                const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
-                ctx.zone_stats.record(zone);
-                continue;
-            }
-
-            const func_name_raw = c.LLVMGetValueName(func);
-            const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
-
-            const zone = ctx.getOrComputeZone(@ptrCast(func), func_name);
-            ctx.zone_stats.record(zone);
-
-            // v0.1.7: Three-layer noise reduction (supersedes zone-only check)
-            const debug_file_path = extractDebugFilePath(func);
-            const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
-            if (classification.origin == .compiler_generated) continue;
-            if (classification.origin == .stdlib and !noise_config.include_stdlib) continue;
-
-            // Defense-in-depth: known FP whitelist (v0.1.7 audit verified)
-            if (FPWhitelist.is_known_fp(func_name) != null) continue;
-
-            // P0-1: Function-level gate — skip functions without danger-surface-relevant
-            // pointers to optimize analysis. DangerSurfacePass (upstream) populates
-            // relevant_functions HashSet; functions not involved in FFI boundary
-            // pointer flow can safely be skipped.
-            if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func)))) {
-                continue;
-            }
-
-            // : Reset hook state for this function scope.
-            hooks.resetHookStatesForFunction();
-
-            // Function-level error isolation
-            analyzeFunction(ctx, func, diag, &stats) catch |err| {
-                diag.warn("CallbackEscape: skipped function due to error: {any} ({s})", .{ err, func_name });
-                ctx.recordDegradedFunction();
-                continue;
+        // T3.1: Pre-collect all functions into work items using IRStore.
+        // IRStore already excludes declarations — no two-pass counting needed.
+        if (ctx.ir_store.function_list.len == 0) return;
+        const work_items = try ctx.allocator.alloc(parallel.WorkItem, ctx.ir_store.function_list.len);
+        defer ctx.allocator.free(work_items);
+        for (ctx.ir_store.function_list, 0..) |fir, idx| {
+            work_items[idx] = .{
+                .func = @intFromPtr(fir.func),
+                .func_name = fir.name,
+                .is_declaration = false,
+                .fir_idx = idx,
             };
-
-            // Check hook state for end-of-function issues.
-            if (hooks.rustUnpairedTransferCount() > 0) {
-                const msg = try std.fmt.allocPrint(ctx.allocator, "Unpaired Rust ownership transfer in {s} (into_raw without matching from_raw)", .{func_name});
-                defer ctx.allocator.free(msg);
-                const trace = try ctx.allocator.alloc(TraceEntry, 1);
-                trace[0] = TraceEntry.init("Rust into_raw() not paired with from_raw() — potential ownership leak across FFI boundary");
-                const issue = Issue.initWithTrace(
-                    .cross_language_leak,
-                    msg,
-                    Location.init(func_name),
-                    .medium,
-                    0.65,
-                    trace,
-                );
-                try ctx.addIssue(&issue);
-                stats.unsafeptr_risks += 1;
-            }
-            if (hooks.pythonUnbalancedDecrefCount() > 0) {
-                const count = hooks.pythonUnbalancedDecrefCount();
-                const msg = try std.fmt.allocPrint(ctx.allocator, "{d} unbalanced Py_DECREF(s) in {s} (without matching Py_INCREF)", .{ count, func_name });
-                defer ctx.allocator.free(msg);
-                const trace = try ctx.allocator.alloc(TraceEntry, 1);
-                trace[0] = TraceEntry.init("Python refcount imbalance — potential use-after-free across FFI boundary");
-                const issue = Issue.initWithTrace(
-                    .use_after_free,
-                    msg,
-                    Location.init(func_name),
-                    .high,
-                    0.80,
-                    trace,
-                );
-                try ctx.addIssue(&issue);
-                stats.unsafeptr_risks += @intCast(count);
-            }
         }
 
-        diag.info("CallbackEscape: analyzed {d} funcs, {d} cgo boundaries, {d} issues found", .{ stats.total_functions_analyzed, stats.go_cgo_boundaries_found, stats.keepalive_missing + stats.cbytes_escapes +
-            stats.unsafeptr_risks + stats.malloc_leaks + stats.free_orphans });
+        // T3.1: Mutex protecting shared PassContext state during parallel analysis.
+        var analysis_mutex = std.Thread.Mutex{};
+
+        // T3.1: Per-worker local stats
+        var worker_stats_arr: [CB_MAX_WORKERS]EscapeStats = undefined;
+        var worker_stats_len: usize = 0;
+
+        // T3.1: Worker context for callback escape analysis
+        var cb_worker_ctx = CallbackEscapeWorkerContext{
+            .ctx_ptr = ctx,
+            .diag_ptr = diag,
+            .noise_cfg = noise_config,
+            .mutex = &analysis_mutex,
+            .stats_arr = &worker_stats_arr,
+            .stats_len = &worker_stats_len,
+        };
+
+        // T3.1: Publish worker context
+        cb_context_ptr = &cb_worker_ctx;
+        defer cb_context_ptr = null;
+
+        var executor = try parallel.ParallelExecutor.init(ctx.allocator, 0);
+        defer executor.deinit();
+        _ = try executor.run(work_items, cbEscapeWorkerFn);
+
+        // T3.1: Merge per-worker stats
+        for (worker_stats_arr[0..worker_stats_len]) |*ws| {
+            stats.total_functions_analyzed += ws.total_functions_analyzed;
+            stats.go_cgo_boundaries_found += ws.go_cgo_boundaries_found;
+            stats.keepalive_missing += ws.keepalive_missing;
+            stats.cbytes_escapes += ws.cbytes_escapes;
+            stats.unsafeptr_risks += ws.unsafeptr_risks;
+            stats.malloc_leaks += ws.malloc_leaks;
+            stats.free_orphans += ws.free_orphans;
+        }
+
+        diag.info("CallbackEscape: analyzed {d} funcs, {d} cgo boundaries, {d} issues found", .{
+            stats.total_functions_analyzed,
+            stats.go_cgo_boundaries_found,
+            stats.keepalive_missing + stats.cbytes_escapes + stats.unsafeptr_risks + stats.malloc_leaks + stats.free_orphans,
+        });
     }
 
     /// Extract debug file path from LLVM subprogram metadata.
     /// Used by NoiseReduction Layer 2 (path-based filter).
+    /// T3.1: Worker context for callback escape parallel analysis.
+    const CB_MAX_WORKERS = 16;
+    const CallbackEscapeWorkerContext = struct {
+        ctx_ptr: *PassContext,
+        diag_ptr: *DiagnosticWriter,
+        noise_cfg: NoiseReduction.NoiseReductionConfig,
+        mutex: *std.Thread.Mutex,
+        stats_arr: *[CB_MAX_WORKERS]EscapeStats,
+        stats_len: *usize,
+    };
+
+    var cb_context_ptr: ?*CallbackEscapeWorkerContext = null;
+
+    fn getCBWorkerContext() *CallbackEscapeWorkerContext {
+        return cb_context_ptr.?;
+    }
+
+    fn cbEscapeWorkerFn(item: parallel.WorkItem, worker_id: usize) !parallel.WorkerResult {
+        _ = worker_id;
+        var result = parallel.WorkerResult{};
+        const wctx = getCBWorkerContext();
+
+        // Get IRStore FunctionIR for this function
+        const fir = wctx.ctx_ptr.ir_store.function_list[item.fir_idx];
+        const func = fir.func;
+
+        // Noise filtering (read-only, no lock needed)
+        const debug_file_path = extractDebugFilePath(func);
+        const classification = NoiseReduction.classifyFunction(item.func_name, debug_file_path, wctx.noise_cfg);
+        if (classification.origin == .compiler_generated) {
+            result.funcs_skipped += 1;
+            return result;
+        }
+        if (classification.origin == .stdlib and !wctx.noise_cfg.include_stdlib) {
+            result.funcs_skipped += 1;
+            return result;
+        }
+        if (FPWhitelist.is_known_fp(item.func_name) != null) {
+            result.funcs_skipped += 1;
+            return result;
+        }
+        if (!wctx.ctx_ptr.isRelevantFunction(@as(u64, item.func))) {
+            result.funcs_skipped += 1;
+            return result;
+        }
+
+        // Per-function local stats
+        var fn_stats = EscapeStats{};
+
+        hooks.resetHookStatesForFunction();
+
+        // Core analysis + issue reporting under mutex
+        wctx.mutex.lock();
+        defer wctx.mutex.unlock();
+
+        analyzeFunction(wctx.ctx_ptr, fir, wctx.diag_ptr, &fn_stats) catch |err| {
+            wctx.diag_ptr.warn("CallbackEscape: skipped function due to error: {} ({s})", .{ err, item.func_name });
+            wctx.ctx_ptr.recordDegradedFunction();
+            result.funcs_errored += 1;
+            return result;
+        };
+
+        result.funcs_analyzed = 1;
+
+        // Store stats in shared array
+        if (wctx.stats_len.* < CB_MAX_WORKERS) {
+            wctx.stats_arr[wctx.stats_len.*] = fn_stats;
+            wctx.stats_len.* += 1;
+        }
+
+        // Hook-based end-of-function checks
+        if (hooks.rustUnpairedTransferCount() > 0) {
+            const msg = std.fmt.allocPrint(wctx.ctx_ptr.allocator, "Unpaired Rust ownership transfer in {s} (into_raw without matching from_raw)", .{item.func_name}) catch {
+                return result;
+            };
+            const trace = wctx.ctx_ptr.allocator.alloc(TraceEntry, 1) catch {
+                wctx.ctx_ptr.allocator.free(msg);
+                return result;
+            };
+            trace[0] = TraceEntry.init("Rust into_raw() not paired with from_raw() — potential ownership leak across FFI boundary");
+            var issue = Issue.initWithTrace(.cross_language_leak, msg, Location.init(item.func_name), .medium, 0.65, trace);
+            issue.owned = true;
+            wctx.ctx_ptr.addIssue(&issue) catch {};
+        }
+        {
+            const count = hooks.pythonUnbalancedDecrefCount();
+            if (count > 0) {
+                const msg = std.fmt.allocPrint(wctx.ctx_ptr.allocator, "{d} unbalanced Py_DECREF(s) in {s}", .{ count, item.func_name }) catch {
+                    return result;
+                };
+                const trace = wctx.ctx_ptr.allocator.alloc(TraceEntry, 1) catch {
+                    wctx.ctx_ptr.allocator.free(msg);
+                    return result;
+                };
+                trace[0] = TraceEntry.init("Python refcount imbalance — potential use-after-free across FFI boundary");
+                var issue = Issue.initWithTrace(.use_after_free, msg, Location.init(item.func_name), .high, 0.80, trace);
+                issue.owned = true;
+                wctx.ctx_ptr.addIssue(&issue) catch {};
+            }
+        }
+        return result;
+    }
+
     fn extractDebugFilePath(func: c.LLVMValueRef) ?[]const u8 {
         const subprogram = c.LLVMGetSubprogram(func);
         if (@intFromPtr(subprogram) == 0) return null;
@@ -699,15 +335,12 @@ pub const CallbackEscapePass = struct {
 
     fn analyzeFunction(
         ctx: *PassContext,
-        func: c.LLVMValueRef,
+        fir: *const ir_store_mod.FunctionIR,
         diag: *DiagnosticWriter,
         stats: *EscapeStats,
     ) !void {
-        const func_name_ptr = c.LLVMGetValueName(func);
-        const func_name = if (@intFromPtr(func_name_ptr) != 0)
-            std.mem.span(func_name_ptr)
-        else
-            "unknown";
+        const func = fir.func;
+        const func_name = fir.name;
 
         // R7.2 Language Channel Gate
         const escape_channel = ctx.channelCallbackEscape();
@@ -720,7 +353,7 @@ pub const CallbackEscapePass = struct {
 
         // INTEGRATION: Three-layer noise filter (name + path)
         const func_loc = DebugInfoUtils.getFunctionLocation(func);
-        const classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+        const classification = ctx.classifyFunctionSurface(func_name, func_loc);
         if (!classification.origin.shouldReportByDefault()) return;
 
         // R7.2: Use module-level language detection instead of per-function cgo check.
@@ -755,59 +388,26 @@ pub const CallbackEscapePass = struct {
         var callback_escapes: std.ArrayList(CallbackEscapeInfo) = .{};
         defer callback_escapes.deinit(ctx.allocator);
 
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                try scanInstruction(ctx.allocator, inst, &keepalive_protected, &alloc_sites, &free_sites, &cgo_calls, &callback_escapes, ctx.isGoModule());
-                const opcode = c.LLVMGetInstructionOpcode(inst);
-                if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
-                    const called = c.LLVMGetCalledValue(inst);
-                    if (@intFromPtr(called) == 0) continue;
-                    const name_ptr = c.LLVMGetValueName(called);
-                    if (@intFromPtr(name_ptr) == 0) continue;
-                    const callee_name = std.mem.span(name_ptr);
-                    if (isGenericCallbackReceiver(callee_name)) {
-                        const num_ops = c.LLVMGetNumOperands(inst);
-                        var i: u32 = 0;
-                        while (i < num_ops) : (i += 1) {
-                            const arg = c.LLVMGetOperand(inst, i);
-                            if (@intFromPtr(arg) == 0) continue;
-                            const arg_type = c.LLVMTypeOf(arg);
-                            if (@intFromPtr(arg_type) == 0) continue;
-                            if (c.LLVMGetTypeKind(arg_type) != c.LLVMPointerTypeKind) continue;
-                            const elem_type = c.LLVMGetElementType(arg_type);
-                            if (@intFromPtr(elem_type) == 0) continue;
-                            if (c.LLVMGetTypeKind(elem_type) != c.LLVMFunctionTypeKind) continue;
-                            if (isLikelyCallbackFunction(elem_type, callee_name)) {
-                                try callback_escapes.append(ctx.allocator, .{
-                                    .inst = inst,
-                                    .receiver_name = callee_name,
-                                    .callback_arg = arg,
-                                });
-                            }
-                        }
-                    }
-                }
-                if (opcode == c.LLVMStore) {
-                    const value_op = c.LLVMGetOperand(inst, 0);
-                    if (@intFromPtr(value_op) == 0) continue;
-                    const value_type = c.LLVMTypeOf(value_op);
-                    if (@intFromPtr(value_type) == 0) continue;
-                    if (c.LLVMGetTypeKind(value_type) != c.LLVMPointerTypeKind) continue;
-                    const elem_type = c.LLVMGetElementType(value_type);
-                    if (@intFromPtr(elem_type) == 0) continue;
-                    if (c.LLVMGetTypeKind(elem_type) != c.LLVMFunctionTypeKind) continue;
-                    const ptr_op = c.LLVMGetOperand(inst, 1);
-                    if (@intFromPtr(ptr_op) == 0) continue;
-                    if (isGlobalVariable(ptr_op)) {
-                        try callback_escapes.append(ctx.allocator, .{
-                            .inst = inst,
-                            .receiver_name = "global_store",
-                            .callback_arg = value_op,
-                        });
-                    }
-                }
+        for (fir.instructions) |inst| {
+            try scanInstruction(
+                ctx.allocator,
+                inst,
+                &keepalive_protected,
+                &alloc_sites,
+                &free_sites,
+                &cgo_calls,
+                &callback_escapes,
+                ctx.isGoModule(),
+                ctx.module_language.language,
+                ctx.platform_profile,
+            );
+        }
+
+        if (callback_escapes.items.len == 0) {
+            var scanned_escapes = try scanCallbackEscapes(ctx.allocator, func);
+            defer scanned_escapes.deinit(ctx.allocator);
+            for (scanned_escapes.items) |se| {
+                try callback_escapes.append(ctx.allocator, se);
             }
         }
 
@@ -901,14 +501,90 @@ pub const CallbackEscapePass = struct {
                     }
                     if (cgo_ptr_val != 0) {
                         if (!ctx.isRelevantAlloc(cgo_ptr_val)) continue;
-                        try reportCBytesEscape(ctx, func_name, call, diag);
+                        // Generate candidate instead of direct reporting
+                        var candidate = try cb_report.generateCBytesEscapeCandidate(ctx, func_name, call, diag);
+                        defer candidate.deinit();
+                        // Verify candidate through IssueVerifier
+                        if (ctx.issue_verifier) |verifier| {
+                            const result = try verifier.verify(&candidate);
+                            if (result.shouldReport()) {
+                                const sev: Severity = switch (result.severity) {
+                                    .critical => .critical,
+                                    .high => .high,
+                                    .medium => .medium,
+                                    .low => .low,
+                                    else => .medium,
+                                };
+                                // Convert candidate to Issue and add to context
+                                const issue = Issue.initWithTrace(
+                                    .memory_leak,
+                                    candidate.reason orelse "CBytes escape detected",
+                                    Location.init(func_name),
+                                    sev,
+                                    result.adjusted_score,
+                                    &[_]TraceEntry{},
+                                );
+                                candidate.reason = null; // Transfer ownership to Issue to avoid double-free
+                                try ctx.addIssue(&issue);
+                            }
+                        } else {
+                            // Legacy mode: direct reporting
+                            const issue = Issue.initWithTrace(
+                                .memory_leak,
+                                candidate.reason orelse "CBytes escape detected",
+                                Location.init(func_name),
+                                .medium,
+                                0.65, // med_cbytes_escape confidence
+                                &[_]TraceEntry{},
+                            );
+                            candidate.reason = null; // Transfer ownership to Issue to avoid double-free
+                            try ctx.addIssue(&issue);
+                        }
                         stats.cbytes_escapes += 1;
                     }
                 }
             }
 
             if (isUnsafePtrConversion(call.callee_name)) {
-                try reportUnsafePtrRisk(ctx, func_name, call, diag);
+                // Generate candidate instead of direct reporting
+                var candidate = try cb_report.generateUnsafePtrRiskCandidate(ctx, func_name, call, diag);
+                defer candidate.deinit();
+                // Verify candidate through IssueVerifier
+                if (ctx.issue_verifier) |verifier| {
+                    const result = try verifier.verify(&candidate);
+                    if (result.shouldReport()) {
+                        const sev2: Severity = switch (result.severity) {
+                            .critical => .critical,
+                            .high => .high,
+                            .medium => .medium,
+                            .low => .low,
+                            else => .medium,
+                        };
+                        // Convert candidate to Issue and add to context
+                        const issue = Issue.initWithTrace(
+                            .borrow_escape,
+                            candidate.reason orelse "Unsafe pointer risk detected",
+                            Location.init(func_name),
+                            sev2,
+                            result.adjusted_score,
+                            &[_]TraceEntry{},
+                        );
+                        candidate.reason = null; // Transfer ownership to Issue to avoid double-free
+                        try ctx.addIssue(&issue);
+                    }
+                } else {
+                    // Legacy mode: direct reporting
+                    const issue = Issue.initWithTrace(
+                        .borrow_escape,
+                        candidate.reason orelse "Unsafe pointer risk detected",
+                        Location.init(func_name),
+                        .high,
+                        0.72, // med_unsafe_ptr confidence
+                        &[_]TraceEntry{},
+                    );
+                    candidate.reason = null; // Transfer ownership to Issue to avoid double-free
+                    try ctx.addIssue(&issue);
+                }
                 stats.unsafeptr_risks += 1;
             }
         }
@@ -916,41 +592,14 @@ pub const CallbackEscapePass = struct {
         try checkMallocFreePairing(ctx, func_name, &alloc_sites, &free_sites, diag, stats);
 
         for (callback_escapes.items) |escape| {
-            if (!std.mem.eql(u8, escape.receiver_name, "global_store")) {
+            if (isBorrowedCallbackArg(escape)) {
                 const called_val = c.LLVMGetCalledValue(escape.inst);
-                if (@intFromPtr(called_val) != 0) {
+                const callee_name = if (@intFromPtr(called_val) != 0) blk: {
                     const callee_name_ptr = c.LLVMGetValueName(called_val);
-                    const callee_name = if (@intFromPtr(callee_name_ptr) != 0)
-                        std.mem.span(callee_name_ptr)
-                    else
-                        "unknown";
-                    const cb_arg_hash = @as(u64, @intFromPtr(escape.callback_arg));
-                    var is_borrowed = false;
-                    const num_ops = c.LLVMGetNumOperands(escape.inst);
-                    var j: u32 = 0;
-                    while (j < num_ops) : (j += 1) {
-                        const arg = c.LLVMGetOperand(escape.inst, j);
-                        if (@intFromPtr(arg) == 0) continue;
-                        const arg_hash = @as(u64, @intFromPtr(arg));
-                        if (arg_hash != cb_arg_hash) continue;
-                        const arg_type = c.LLVMTypeOf(arg);
-                        if (@intFromPtr(arg_type) != 0 and
-                            c.LLVMGetTypeKind(arg_type) == c.LLVMPointerTypeKind)
-                        {
-                            const elem_type = c.LLVMGetElementType(arg_type);
-                            if (@intFromPtr(elem_type) != 0 and
-                                c.LLVMGetTypeKind(elem_type) == c.LLVMFunctionTypeKind)
-                            {
-                                is_borrowed = true;
-                            }
-                        }
-                        break;
-                    }
-                    if (is_borrowed) {
-                        diag.debug("[SUPPRESSED] Callback arg is borrowed_only: {s} -> {s}", .{ func_name, callee_name });
-                        continue;
-                    }
-                }
+                    break :blk if (@intFromPtr(callee_name_ptr) != 0) std.mem.span(callee_name_ptr) else "unknown";
+                } else "unknown";
+                diag.debug("[SUPPRESSED] Callback arg is borrowed_only: {s} -> {s}", .{ func_name, callee_name });
+                continue;
             }
 
             if (!std.mem.eql(u8, escape.receiver_name, "global_store")) {
@@ -1002,315 +651,6 @@ pub const CallbackEscapePass = struct {
         try reportGenericCallbackEscape(ctx, func_name, escape, diag, indirect_escape);
     }
 
-    fn checkCallbackEscape(
-        ctx: *PassContext,
-        func_name: []const u8,
-        func: c.LLVMValueRef,
-        diag: *DiagnosticWriter,
-        stats: *EscapeStats,
-    ) !void {
-        var callback_escapes: std.ArrayList(CallbackEscapeInfo) = .{};
-        defer callback_escapes.deinit(ctx.allocator);
-
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                const opcode = c.LLVMGetInstructionOpcode(inst);
-                if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
-                    const called = c.LLVMGetCalledValue(inst);
-                    if (@intFromPtr(called) == 0) continue;
-                    const name_ptr = c.LLVMGetValueName(called);
-                    if (@intFromPtr(name_ptr) == 0) continue;
-                    const callee_name = std.mem.span(name_ptr);
-
-                    if (isGenericCallbackReceiver(callee_name)) {
-                        const num_ops = c.LLVMGetNumOperands(inst);
-                        var i: u32 = 0;
-                        while (i < num_ops) : (i += 1) {
-                            const arg = c.LLVMGetOperand(inst, i);
-                            if (@intFromPtr(arg) != 0) {
-                                const arg_type = c.LLVMTypeOf(arg);
-                                if (@intFromPtr(arg_type) == 0) continue;
-                                if (c.LLVMGetTypeKind(arg_type) == c.LLVMPointerTypeKind) {
-                                    const elem_type = c.LLVMGetElementType(arg_type);
-                                    if (@intFromPtr(elem_type) != 0 and
-                                        c.LLVMGetTypeKind(elem_type) == c.LLVMFunctionTypeKind)
-                                    {
-                                        if (isLikelyCallbackFunction(elem_type, callee_name)) {
-                                            try callback_escapes.append(ctx.allocator, .{
-                                                .inst = inst,
-                                                .receiver_name = callee_name,
-                                                .callback_arg = arg,
-                                            });
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if (opcode == c.LLVMStore) {
-                    const value_op = c.LLVMGetOperand(inst, 0);
-                    if (@intFromPtr(value_op) != 0) {
-                        const value_type = c.LLVMTypeOf(value_op);
-                        if (@intFromPtr(value_type) == 0) continue;
-                        if (c.LLVMGetTypeKind(value_type) == c.LLVMPointerTypeKind) {
-                            const elem_type = c.LLVMGetElementType(value_type);
-                            if (@intFromPtr(elem_type) != 0 and
-                                c.LLVMGetTypeKind(elem_type) == c.LLVMFunctionTypeKind)
-                            {
-                                const ptr_op = c.LLVMGetOperand(inst, 1);
-                                if (@intFromPtr(ptr_op) != 0) {
-                                    if (isGlobalVariable(ptr_op)) {
-                                        try callback_escapes.append(ctx.allocator, .{
-                                            .inst = inst,
-                                            .receiver_name = "global_store",
-                                            .callback_arg = value_op,
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        for (callback_escapes.items) |escape| {
-            // v0.1.7: Use call_graph argument direction analysis to filter
-            // false-positive callback escapes. If the callback argument is
-            // classified as borrowed_only (e.g. function pointer callback),
-            // it's a legitimate pattern, not an escape.
-            if (!std.mem.eql(u8, escape.receiver_name, "global_store")) {
-                const called_val = c.LLVMGetCalledValue(escape.inst);
-                if (@intFromPtr(called_val) != 0) {
-                    const callee_name_ptr = c.LLVMGetValueName(called_val);
-                    const callee_name = if (@intFromPtr(callee_name_ptr) != 0)
-                        std.mem.span(callee_name_ptr)
-                    else
-                        "unknown";
-
-                    // Inline argument direction analysis to avoid cross-cimport type issues.
-                    const cb_arg_hash = @as(u64, @intFromPtr(escape.callback_arg));
-                    var is_borrowed = false;
-                    const num_ops = c.LLVMGetNumOperands(escape.inst);
-                    var j: u32 = 0;
-                    while (j < num_ops) : (j += 1) {
-                        const arg = c.LLVMGetOperand(escape.inst, j);
-                        if (@intFromPtr(arg) == 0) continue;
-                        const arg_hash = @as(u64, @intFromPtr(arg));
-                        if (arg_hash != cb_arg_hash) continue;
-
-                        // Check if this arg is a function pointer (callback)
-                        const arg_type = c.LLVMTypeOf(arg);
-                        if (@intFromPtr(arg_type) != 0 and
-                            c.LLVMGetTypeKind(arg_type) == c.LLVMPointerTypeKind)
-                        {
-                            const elem_type = c.LLVMGetElementType(arg_type);
-                            if (@intFromPtr(elem_type) != 0 and
-                                c.LLVMGetTypeKind(elem_type) == c.LLVMFunctionTypeKind)
-                            {
-                                is_borrowed = true;
-                            }
-                        }
-                        break;
-                    }
-
-                    if (is_borrowed) {
-                        diag.debug("[SUPPRESSED] Callback arg is borrowed_only (not an escape): {s} -> {s}", .{ func_name, callee_name });
-                        continue;
-                    }
-                }
-            }
-
-            // Validate callback signature when receiver is a known pattern.
-            // This catches type mismatches like passing int(*)(int,int) to signal()
-            // which expects void(*)(int). Reports as low-confidence to avoid FP.
-            if (!std.mem.eql(u8, escape.receiver_name, "global_store")) {
-                const cb_type = c.LLVMGetElementType(
-                    c.LLVMTypeOf(escape.callback_arg),
-                );
-                if (@intFromPtr(cb_type) != 0) {
-                    const type_str = c.LLVMGetStructName(cb_type);
-                    const type_name = if (@intFromPtr(type_str) != 0)
-                        std.mem.span(type_str)
-                    else
-                        "";
-                    if (!validate_callback_signature(escape.receiver_name, type_name)) {
-                        try reportSignatureMismatch(ctx, func_name, escape, diag);
-                        stats.callback_escapes += 1;
-                        continue;
-                    }
-                }
-            }
-            try reportCallbackWithAliasCheck(ctx, func_name, escape, diag);
-            stats.callback_escapes += 1;
-        }
-    }
-
-    fn isGlobalVariable(ptr: c.LLVMValueRef) bool {
-        if (@intFromPtr(ptr) == 0) return false;
-        return c.LLVMGetValueKind(ptr) == c.LLVMGlobalVariableValueKind;
-    }
-
-    fn isLikelyCallbackFunction(fn_type: c.LLVMTypeRef, receiver_name: []const u8) bool {
-        if (@intFromPtr(fn_type) == 0) return false;
-
-        const num_params = c.LLVMCountParamTypes(fn_type);
-        if (num_params == 0) return false;
-
-        const ret_type = c.LLVMGetReturnType(fn_type);
-        if (@intFromPtr(ret_type) == 0) return false;
-
-        const void_patterns = [_][]const u8{
-            "atexit",         "qsort",              "bsearch", "signal", "sigaction",
-            "pthread_create", "pthread_key_create",
-        };
-        for (void_patterns) |p| {
-            if (std.mem.indexOf(u8, receiver_name, p) != null) return true;
-        }
-
-        if (c.LLVMGetTypeKind(ret_type) == c.LLVMVoidTypeKind or
-            c.LLVMGetTypeKind(ret_type) == c.LLVMIntegerTypeKind or
-            c.LLVMGetTypeKind(ret_type) == c.LLVMPointerTypeKind)
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    fn isGenericCallbackReceiver(receiver: []const u8) bool {
-        for (C_RETAINING_FUNCTIONS) |pattern| {
-            if (std.mem.indexOf(u8, receiver, pattern) != null) return true;
-        }
-        return false;
-    }
-
-    fn scanInstruction(
-        allocator: std.mem.Allocator,
-        inst: c.LLVMValueRef,
-        keepalive_protected: *std.AutoHashMap(u64, void),
-        alloc_sites: *std.ArrayList(AllocSiteInfo),
-        free_sites: *std.ArrayList(FreeSiteInfo),
-        cgo_calls: *std.ArrayList(CGoCallInfo),
-        callback_escapes: *std.ArrayList(CallbackEscapeInfo),
-        is_go_module: bool,
-    ) !void {
-        const opcode = c.LLVMGetInstructionOpcode(inst);
-
-        if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
-            const called = c.LLVMGetCalledValue(inst);
-            if (@intFromPtr(called) == 0) return;
-
-            const name_ptr = c.LLVMGetValueName(called);
-            if (@intFromPtr(name_ptr) == 0) return;
-            const callee_name = std.mem.span(name_ptr);
-
-            if (isGoSafetyFunction(callee_name)) {
-                // Record which pointer is protected by this KeepAlive call.
-                // runtime.KeepAlive(ptr) takes one argument: the pointer to protect.
-                if (c.LLVMGetNumOperands(inst) >= 2) {
-                    const protected_ptr = c.LLVMGetOperand(inst, 1);
-                    if (@intFromPtr(protected_ptr) != 0) {
-                        const ptr_val = @as(u64, @intFromPtr(protected_ptr));
-                        // Propagate allocation failure rather than silently ignoring.
-                        // OOM here would indicate system resource exhaustion, which should
-                        // be reported to the caller for proper error handling.
-                        try keepalive_protected.put(ptr_val, {});
-                    }
-                }
-            }
-
-            // R7.2: Module-level language gate (passed from analyzeFunction).
-            // Use word boundary matching to prevent false positives like "dmalloc" or "calfree"
-            if (is_go_module or
-                word_boundary.isWordBoundaryMatch(callee_name, "malloc") or
-                word_boundary.isWordBoundaryMatch(callee_name, "calloc"))
-            {
-                try alloc_sites.append(allocator, .{
-                    .inst_id = inst,
-                    .func_name = try allocator.dupe(u8, callee_name),
-                });
-            }
-
-            if (word_boundary.isWordBoundaryMatch(callee_name, "free")) {
-                try free_sites.append(allocator, .{
-                    .inst_id = inst,
-                    .func_name = try allocator.dupe(u8, callee_name),
-                });
-            }
-
-            // R7.2: Module-level language gate replaces isCgoBoundary name matching.
-            if (is_go_module or
-                isCBytesPattern(callee_name) or
-                isUnsafePtrConversion(callee_name))
-            {
-                const num_ops = c.LLVMGetNumOperands(inst);
-                var has_ptr_arg = false;
-                var i: u32 = 0;
-                while (i < num_ops) : (i += 1) {
-                    const op = c.LLVMGetOperand(inst, i);
-                    if (@intFromPtr(op) != 0) {
-                        const op_type = c.LLVMTypeOf(op);
-                        if (@intFromPtr(op_type) == 0) continue;
-                        const type_kind = c.LLVMGetTypeKind(op_type);
-                        if (type_kind == c.LLVMPointerTypeKind) {
-                            has_ptr_arg = true;
-                            break;
-                        }
-                    }
-                }
-
-                try cgo_calls.append(allocator, .{
-                    .inst = inst,
-                    .callee_name = try allocator.dupe(u8, callee_name),
-                    .is_pointer_arg = has_ptr_arg,
-                });
-            }
-        }
-
-        // A1-3/B3: Detect alloca (stack allocation) passed to FFI boundary.
-        // Stack addresses become dangling when the FFI callee stores them
-        // and accesses them after the caller returns.
-        if (opcode == c.LLVMAlloca) {
-            var alloca_use = c.LLVMGetFirstUse(inst);
-            while (@intFromPtr(alloca_use) != 0) : (alloca_use = c.LLVMGetNextUse(alloca_use)) {
-                const user = c.LLVMGetUser(alloca_use);
-                if (@intFromPtr(user) == 0) continue;
-                const user_opcode = c.LLVMGetInstructionOpcode(user);
-                if (user_opcode == c.LLVMCall or user_opcode == c.LLVMInvoke) {
-                    const called_val = c.LLVMGetCalledValue(user);
-                    if (@intFromPtr(called_val) == 0) continue;
-                    const called_name_ptr = c.LLVMGetValueName(called_val);
-                    if (@intFromPtr(called_name_ptr) == 0) continue;
-                    const called_name = std.mem.span(called_name_ptr);
-                    const callee_lang = lang_classifier.identifyCalleeLanguage(called_name);
-                    if (callee_lang != .unknown) {
-                        try callback_escapes.append(allocator, .{
-                            .inst = user,
-                            .receiver_name = called_name,
-                            .callback_arg = inst,
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    /// Checks malloc/free pairing with cross-function ownership awareness.
-    ///
-    /// This function analyzes the balance between allocations and frees within
-    /// a single function, but with awareness of common ownership transfer patterns:
-    ///
-    ///   1. Factory functions: Return ownership to caller (more allocs than frees)
-    ///   2. Destructor functions: Consume ownership from caller (more frees than allocs)
-    ///   3. Transfer functions: Receive and pass on ownership (balanced but via params)
-    ///
-    /// By recognizing these patterns, we can suppress false positives where the
-    /// mismatch is intentional and correct.
     fn checkMallocFreePairing(
         ctx: *PassContext,
         func_name: []const u8,
@@ -1319,64 +659,15 @@ pub const CallbackEscapePass = struct {
         diag: *DiagnosticWriter,
         stats: *EscapeStats,
     ) !void {
-        var malloc_count: u32 = 0;
-        var free_count: u32 = 0;
+        const pair_result = countMallocFreeSites(alloc_sites, free_sites, func_name);
 
-        // Count allocations (using word boundary matching for consistency)
-        for (alloc_sites.items) |site| {
-            if (word_boundary.isWordBoundaryMatch(site.func_name, "malloc") or
-                word_boundary.isWordBoundaryMatch(site.func_name, "calloc") or
-                word_boundary.isWordBoundaryMatch(site.func_name, "realloc"))
-            {
-                malloc_count += 1;
-            }
-        }
-
-        // Count frees
-        for (free_sites.items) |site| {
-            if (word_boundary.isWordBoundaryMatch(site.func_name, "free")) {
-                free_count += 1;
-            }
-        }
-
-        // Pattern 1: Factory/Constructor functions
-        // These intentionally have more allocs than frees because they transfer
-        // ownership to the caller via return value or output parameter.
-        if (isFactoryFunction(func_name)) {
-            if (malloc_count > free_count) {
-                // This is expected for factory functions
-                diag.debug("[SUPPRESSED] Factory function {s}: {d} allocs > {d} frees (ownership transferred to caller)", .{ func_name, malloc_count, free_count });
-                return;
-            }
-        }
-
-        // Pattern 2: Destructor/Cleanup functions
-        // These intentionally have more frees than allocs because they consume
-        // ownership from the caller via parameters.
-        if (isDestructorFunction(func_name)) {
-            if (free_count > malloc_count) {
-                // This is expected for destructor functions
-                diag.debug("[SUPPRESSED] Destructor function {s}: {d} frees > {d} allocs (ownership consumed from caller)", .{ func_name, free_count, malloc_count });
-                return;
-            }
-        }
-
-        // Pattern 3: Transfer functions
-        // These may have unbalanced counts but are correct because they receive
-        // ownership via parameters and pass it on via return values.
-        if (isTransferFunction(func_name)) {
-            diag.debug("[SUPPRESSED] Transfer function {s}: {d} allocs, {d} frees (ownership flows through)", .{ func_name, malloc_count, free_count });
+        if (pair_result.is_pattern_suppressed) {
+            diag.debug("[SUPPRESSED] {s}: {d} allocs, {d} frees (ownership pattern)", .{ func_name, pair_result.malloc_count, pair_result.free_count });
             return;
         }
 
-        // Report actual issues only if no pattern matches
-        // R8.0 consume: Cross-verify with unified MemoryGraph call edges
-        // before reporting leaks. If pointers are tracked as transferred via
-        // call_ret edges, suppress false-positive leak reports.
         const mg = &ctx.memory_graph;
-        if (malloc_count > free_count) {
-            // Check if any allocation result is recorded as a call return
-            // (ownership transferred to caller via FFI boundary)
+        if (pair_result.malloc_count > pair_result.free_count) {
             var has_call_ret_transfer = false;
             for (alloc_sites.items) |site| {
                 const ptr_val = @as(u64, @intFromPtr(site.inst_id));
@@ -1386,16 +677,54 @@ pub const CallbackEscapePass = struct {
                 }
             }
             if (!has_call_ret_transfer) {
-                try reportMallocLeak(ctx, func_name, malloc_count, free_count, diag);
-                stats.malloc_leaks += @as(u32, @intCast(malloc_count - free_count));
+                // Generate candidate instead of direct reporting
+                var candidate = try cb_report.generateMallocLeakCandidate(ctx, func_name, pair_result.malloc_count, pair_result.free_count, diag);
+                defer candidate.deinit();
+                // Verify candidate through IssueVerifier
+                if (ctx.issue_verifier) |verifier| {
+                    const result = try verifier.verify(&candidate);
+                    if (result.shouldReport()) {
+                        const sev3: Severity = switch (result.severity) {
+                            .critical => .critical,
+                            .high => .high,
+                            .medium => .medium,
+                            .low => .low,
+                            else => .medium,
+                        };
+                        // Convert candidate to Issue and add to context
+                        const reason = candidate.reason orelse "Memory leak detected";
+                        candidate.reason = null; // Transfer ownership to Issue to avoid double-free
+                        const issue = Issue.initWithTrace(
+                            .memory_leak,
+                            reason,
+                            Location.init(func_name),
+                            sev3,
+                            result.adjusted_score,
+                            &[_]TraceEntry{},
+                        );
+                        try ctx.addIssue(&issue);
+                    }
+                } else {
+                    // Legacy mode: direct reporting
+                    const reason = candidate.reason orelse "Memory leak detected";
+                    candidate.reason = null; // Transfer ownership to Issue to avoid double-free
+                    const issue = Issue.initWithTrace(
+                        .memory_leak,
+                        reason,
+                        Location.init(func_name),
+                        .medium,
+                        Confidence.med_malloc_leak,
+                        &[_]TraceEntry{},
+                    );
+                    try ctx.addIssue(&issue);
+                }
+                stats.malloc_leaks += @as(u32, @intCast(pair_result.malloc_count - pair_result.free_count));
             } else {
-                diag.debug("[R8.0-SUPPRESSED] {s}: {d} allocs > {d} frees but ptr returned from call (ownership transferred)", .{ func_name, malloc_count, free_count });
+                diag.debug("[R8.0-SUPPRESSED] {s}: {d} allocs > {d} frees but ptr returned from call", .{ func_name, pair_result.malloc_count, pair_result.free_count });
             }
         }
 
-        if (free_count > malloc_count) {
-            // Check if any free() argument was received as a call arg
-            // (pointer came from caller via FFI boundary)
+        if (pair_result.free_count > pair_result.malloc_count) {
             var has_call_arg_source = false;
             for (free_sites.items) |site| {
                 const ptr_val = @as(u64, @intFromPtr(site.inst_id));
@@ -1405,70 +734,23 @@ pub const CallbackEscapePass = struct {
                 }
             }
             if (!has_call_arg_source) {
-                try reportFreeOrphan(ctx, func_name, malloc_count, free_count, diag);
-                stats.free_orphans += @as(u32, @intCast(free_count - malloc_count));
+                const on_danger = ctx.isOnDangerPathFull(@as(u64, @intFromPtr(func_name.ptr)));
+                if (!on_danger) {
+                    diag.debug("[R8.0-SUPPRESSED] {s}: {d} frees > {d} allocs but not on danger path", .{ func_name, pair_result.free_count, pair_result.malloc_count });
+                } else {
+                    try reportFreeOrphan(ctx, func_name, pair_result.malloc_count, pair_result.free_count, diag);
+                    stats.free_orphans += @as(u32, @intCast(pair_result.free_count - pair_result.malloc_count));
+                }
             } else {
-                diag.debug("[R8.0-SUPPRESSED] {s}: {d} frees > {d} allocs but ptr came from call arg (external source)", .{ func_name, free_count, malloc_count });
+                diag.debug("[R8.0-SUPPRESSED] {s}: {d} frees > {d} allocs but ptr came from call arg", .{ func_name, pair_result.free_count, pair_result.malloc_count });
             }
         }
-    }
-
-    /// Checks if a function is a factory/constructor that transfers ownership to caller.
-    fn isFactoryFunction(func_name: []const u8) bool {
-        const factory_patterns = [_][]const u8{
-            "Alloc",  "Create", "New",     "Init", "Open", "Dup",
-            "Malloc", "Calloc", "Realloc",
-        };
-        for (factory_patterns) |pattern| {
-            if (std.mem.indexOf(u8, func_name, pattern) != null) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /// Checks if a function is a destructor that consumes ownership from caller.
-    fn isDestructorFunction(func_name: []const u8) bool {
-        const destructor_patterns = [_][]const u8{
-            "Free",   "Destroy",  "Delete",  "Close", "Release", "Cleanup",
-            "Finish", "Finalize", "Dispose",
-        };
-        for (destructor_patterns) |pattern| {
-            if (std.mem.indexOf(u8, func_name, pattern) != null) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /// Checks if a function is a transfer function that passes ownership through.
-    fn isTransferFunction(func_name: []const u8) bool {
-        // Functions that receive ownership and pass it on
-        const transfer_patterns = [_][]const u8{
-            "Clone", "Copy", "Move", "Transfer", "Take",
-        };
-        for (transfer_patterns) |pattern| {
-            if (std.mem.indexOf(u8, func_name, pattern) != null) {
-                return true;
-            }
-        }
-        return false;
     }
 };
 
 // ============================================================================
-// Data Structures
+// Data Structures — now imported from cb_types
 // ============================================================================
-
-const AllocSiteInfo = struct {
-    inst_id: c.LLVMValueRef,
-    func_name: []const u8,
-};
-
-const FreeSiteInfo = struct {
-    inst_id: c.LLVMValueRef,
-    func_name: []const u8,
-};
 
 // Re-export reporting functions from callback_escape_report.zig
 pub const reportMissingKeepAlive = cb_report.reportMissingKeepAlive;
@@ -1481,4 +763,4 @@ pub const reportFreeOrphan = cb_report.reportFreeOrphan;
 pub const makeTrace = cb_report.makeTrace;
 
 // Tests are in callback_escape_test.zig (imported to run tests)
-const _tests = @import("callback_escape_test.zig");
+const _tests = @import("callback_escape/callback_escape_test.zig");

@@ -22,6 +22,7 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../../ir/llvm_safe.zig");
 
 const PassContext = @import("../../pass.zig").PassContext;
 const PassKind = @import("../../pass.zig").PassKind;
@@ -35,7 +36,7 @@ const FuzzyMatcher = @import("../../../semantics/memory_graph.zig").FuzzyMatcher
 const MemoryRelations = @import("../../../semantics/memory_relations.zig").MemoryRelations;
 const noise_filter = @import("../../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../../ir/debug_info.zig").DebugInfoUtils;
-const ffi_utils = @import("../ffi_utils.zig");
+const ffi_utils = @import("../ffi/ffi_utils.zig");
 
 /// Hash a string slice to u64 for zero-copy operations
 fn hashString(s: []const u8) u64 {
@@ -108,7 +109,7 @@ pub const MemorySafetyPass = struct {
 
         // INTEGRATION: Three-layer noise filter (name + path)
         const func_loc = DebugInfoUtils.getFunctionLocation(func);
-        const classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+        const classification = ctx.classifyFunctionSurface(func_name, func_loc);
         if (!classification.origin.shouldReportByDefault()) return 0;
 
         _ = try relations.internString(func_name);
@@ -128,7 +129,7 @@ pub const MemorySafetyPass = struct {
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
                 const opcode = c.LLVMGetInstructionOpcode(inst);
 
-                if (opcode == c.LLVMCall) {
+                if (llvm_safe.isCallOrInvoke(opcode)) {
                     const called_val = c.LLVMGetCalledValue(inst);
                     if (@intFromPtr(called_val) == 0) continue;
 
@@ -193,18 +194,34 @@ pub const MemorySafetyPass = struct {
         // Check if this pointer was already freed in a DIFFERENT basic block
         // within the same function. If so, the frees are likely in mutually
         // exclusive branches (if/else) — not a real double free.
-        if (free_bb_map.get(ptr_value)) |prev_bb_count| {
-            if (prev_bb_count >= 1) {
-                // Already freed in at least one other BB in this function.
-                // This is the mutually-exclusive-branch pattern.
-                diag.debug("[SUPPRESSED] Mutually exclusive branch free (BB #{d}, ptr=0x{x}): {s}", .{
-                    prev_bb_count + 1,
-                    ptr_value,
-                    free_func_name,
-                });
-                // Update BB count but do NOT report or add to freed_pointers.
-                _ = free_bb_map.put(ptr_value, prev_bb_count + 1) catch {};
-                return false;
+        //
+        // EXCEPTION: FFI-related frees should NOT be suppressed because:
+        //   1. Loop-pattern calls (e.g., MerkleTree::new calling sha256 N times)
+        //      trigger multiple alloc/free cycles that are NOT mutually exclusive
+        //   2. Cross-language memory bugs are inherently more dangerous
+        //   3. The "mutually exclusive" assumption doesn't hold across ABI boundaries
+        //
+        // Detection uses BOTH callee name AND caller context:
+        //   - Callee patterns: __rust_dealloc, free(), c_*, etc.
+        //   - Caller context: FFI boundary functions, loop-pattern callers,
+        //     cross-language wrappers (inflateEnd, PyMem_Free, etc.)
+        const ffi_caller_name_ptr = c.LLVMGetValueName(caller_func);
+        const ffi_caller_name = if (@intFromPtr(ffi_caller_name_ptr) != 0) std.mem.span(ffi_caller_name_ptr) else "";
+        const is_ffi_free = isFFIRelatedFree(free_func_name, ffi_caller_name);
+        if (!is_ffi_free) {
+            if (free_bb_map.get(ptr_value)) |prev_bb_count| {
+                if (prev_bb_count >= 1) {
+                    // Already freed in at least one other BB in this function.
+                    // This is the mutually-exclusive-branch pattern.
+                    diag.debug("[SUPPRESSED] Mutually exclusive branch free (BB #{d}, ptr=0x{x}): {s}", .{
+                        prev_bb_count + 1,
+                        ptr_value,
+                        free_func_name,
+                    });
+                    // Update BB count but do NOT report or add to freed_pointers.
+                    _ = free_bb_map.put(ptr_value, prev_bb_count + 1) catch {};
+                    return false;
+                }
             }
         }
 
@@ -220,7 +237,7 @@ pub const MemorySafetyPass = struct {
                         return false;
                     }
                 }
-                const callee_classification = noise_filter.classifyFunctionFull(free_func_name, null, null, null);
+                const callee_classification = ctx.classifyFunctionSurface(free_func_name, null);
                 if (callee_classification.origin == .compiler_generated) {
                     diag.debug("[SUPPRESSED] Double free in compiler-generated function: {s} ({s})", .{ free_func_name, callee_classification.reason });
                     return false;
@@ -352,6 +369,88 @@ pub const MemorySafetyPass = struct {
             std.mem.indexOf(u8, func_name, "_R") != null;
         if (!is_rust) return false;
         return ffi_utils.isRustDropGlue(func_name);
+    }
+
+    /// Check if a free call is FFI-related and should be exempt from
+    /// "mutually exclusive branch" suppression.
+    ///
+    /// Uses TWO signals:
+    ///   1. **Callee name**: Known FFI deallocators (__rust_dealloc, free(), c_*, etc.)
+    ///   2. **Caller context**: Whether the calling function is an FFI boundary
+    ///      or cross-language wrapper (even with non-standard deallocators like
+    ///      inflateEnd, PyMem_Free, cairo_destroy, etc.)
+    fn isFFIRelatedFree(free_func_name: []const u8, caller_func_name: []const u8) bool {
+        // Signal 1: Callee name matches known FFI deallocator patterns
+        if (isFFIDeallocatorName(free_func_name)) return true;
+
+        // Signal 2: Caller function is an FFI boundary or cross-language wrapper
+        if (isFFIBoundaryCaller(caller_func_name)) return true;
+
+        return false;
+    }
+
+    /// Check if a free FUNCTION NAME matches known FFI deallocator patterns.
+    fn isFFIDeallocatorName(func_name: []const u8) bool {
+        // Rust global allocator (used in FFI contexts)
+        if (std.mem.indexOf(u8, func_name, "__rust_dealloc") != null) return true;
+        if (std.mem.indexOf(u8, func_name, "__rust_alloc") != null) return true;
+        if (std.mem.indexOf(u8, func_name, "__rust_free") != null) return true;
+
+        // C standard library frees
+        if (std.mem.eql(u8, func_name, "free")) return true;
+        if (std.mem.eql(u8, func_name, "realloc")) return true;
+
+        // FFI bridge prefix conventions
+        if (std.mem.startsWith(u8, func_name, "c_")) return true;
+        if (std.mem.startsWith(u8, func_name, "cpp_")) return true;
+        if (std.mem.startsWith(u8, func_name, "ffi_")) return true;
+
+        // Common library deallocators used in FFI wrappers
+        const ffi_deallocators = [_][]const u8{
+            "inflateEnd", "deflateEnd", // zlib
+            "PyMem_Free", "PyObject_Free", // Python C API
+            "cairo_destroy", // Cairo
+            "EVP_CIPHER_CTX_free", "EVP_PKEY_free", // OpenSSL
+            "g_string_free", "g_free", // GLib
+            "bson_destroy", // libbson
+        };
+        for (ffi_deallocators) |dealloc| {
+            if (std.mem.eql(u8, func_name, dealloc)) return true;
+        }
+
+        return false;
+    }
+
+    /// Check if a CALLER function looks like an FFI boundary or cross-language wrapper.
+    fn isFFIBoundaryCaller(func_name: []const u8) bool {
+        if (func_name.len == 0) return false;
+
+        // Skip compiler-generated and stdlib internals
+        if (std.mem.startsWith(u8, func_name, "llvm.")) return false;
+        if (std.mem.indexOf(u8, func_name, "__rust_") != null) return false;
+
+        // FFI boundary naming patterns
+        const ffi_patterns = [_][]const u8{
+            "bridge",  "wrapper", "binding", "_ffi",
+            "interop", "marshal", "extern",  "c2",
+            "2c",      "2py",     "py2",     "_cb_",
+            "_impl_",
+        };
+        for (ffi_patterns) |pat| {
+            if (std.mem.indexOf(u8, func_name, pat) != null) return true;
+        }
+
+        // Language transition markers: rust_hash, c_bridge, zig_main, etc.
+        const lang_markers = [_][]const u8{
+            "rust_",    "c_",        "cpp_",     "go_",      "zig_",
+            "_hash",    "_compress", "_encrypt", "_decrypt", "_init",
+            "_cleanup", "_free",     "_destroy",
+        };
+        for (lang_markers) |marker| {
+            if (std.mem.indexOf(u8, func_name, marker) != null) return true;
+        }
+
+        return false;
     }
 };
 

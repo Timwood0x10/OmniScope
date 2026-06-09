@@ -1,0 +1,87 @@
+{
+  "custom_patterns": [
+    {
+      "name": "Suppress test functions",
+      "pattern": "test_",
+      "match_type": "prefix",
+      "action": "suppress",
+      "description": "Suppress all test function patterns"
+    },
+    {
+      "name": "Suppress debug functions",
+      "pattern": "debug_",
+      "match_type": "prefix",
+      "action": "suppress",
+      "description": "Suppress debug function patterns"
+    },
+    {
+      "name": "Escalate security functions",
+      "pattern": "security_",
+      "match_type": "prefix",
+      "action": "escalate",
+      "severity_override": "critical",
+      "description": "Escalate security-related functions to critical"
+    },
+    {
+      "name": "Escalate auth functions",
+      "pattern": "auth_",
+      "match_type": "prefix",
+      "action": "escalate",
+      "severity_override": "high",
+      "description": "Escalate authentication functions to high"
+    },
+    {
+      "name": "Downgrade internal helpers",
+      "pattern": "_internal_",
+      "match_type": "contains",
+      "action": "downgrade",
+      "severity_override": "low",
+      "description": "Downgrade internal helper functions"
+    },
+    {
+      "name": "Ignore legacy functions",
+      "pattern": "legacy_",
+      "match_type": "prefix",
+      "action": "ignore",
+      "description": "Ignore legacy function patterns"
+    }
+  ],
+  "severity_overrides": {
+    "use_after_free": "critical",
+    "double_free": "critical",
+    "buffer_overflow": "critical",
+    "command_injection": "critical",
+    "memory_leak": "medium",
+    "unchecked_return": "low",
+    "type_mismatch": "medium",
+    "ffi_unsafe_call": "high",
+    "cross_language_leak": "high",
+    "cross_language_free": "high"
+  },
+  "suppression_list": [
+    "debug_print",
+    "log_trace",
+    "test_helper",
+    "mock_function",
+    "stub_callback"
+  ],
+  "escalation_list": [
+    "critical_func",
+    "security_check",
+    "auth_validate",
+    "crypto_encrypt",
+    "crypto_decrypt"
+  ],
+  "confidence_thresholds": {
+    "use_after_free": 0.95,
+    "double_free": 0.95,
+    "buffer_overflow": 0.90,
+    "command_injection": 0.90,
+    "memory_leak": 0.80,
+    "unchecked_return": 0.70,
+    "type_mismatch": 0.75,
+    "ffi_unsafe_call": 0.85,
+    "cross_language_leak": 0.85,
+    "cross_language_free": 0.85
+  }
+}

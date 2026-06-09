@@ -15,6 +15,7 @@
 //! - Transformed to a different taint kind
 
 const std = @import("std");
+const log = @import("../common/log.zig");
 
 /// Sanitizer effectiveness level
 pub const SanitizerEffectiveness = enum {
@@ -92,6 +93,62 @@ const SANITIZER_FUNCTIONS = [_]SanitizerInfo{
         .mitigated_cwes = &.{ 78, 88 },
         .requires_correct_usage = false,
     },
+    .{
+        .name = "isupper",
+        .category = .input_validation,
+        .effectiveness = .conditional,
+        .confidence_factor = 0.3,
+        .mitigated_cwes = &.{ 78, 88 },
+        .requires_correct_usage = false,
+    },
+    .{
+        .name = "islower",
+        .category = .input_validation,
+        .effectiveness = .conditional,
+        .confidence_factor = 0.3,
+        .mitigated_cwes = &.{ 78, 88 },
+        .requires_correct_usage = false,
+    },
+    .{
+        .name = "isspace",
+        .category = .input_validation,
+        .effectiveness = .conditional,
+        .confidence_factor = 0.3,
+        .mitigated_cwes = &.{ 78, 88 },
+        .requires_correct_usage = false,
+    },
+    .{
+        .name = "iscntrl",
+        .category = .input_validation,
+        .effectiveness = .conditional,
+        .confidence_factor = 0.3,
+        .mitigated_cwes = &.{ 78, 88 },
+        .requires_correct_usage = false,
+    },
+    .{
+        .name = "isgraph",
+        .category = .input_validation,
+        .effectiveness = .conditional,
+        .confidence_factor = 0.3,
+        .mitigated_cwes = &.{ 78, 88 },
+        .requires_correct_usage = false,
+    },
+    .{
+        .name = "ispunct",
+        .category = .input_validation,
+        .effectiveness = .conditional,
+        .confidence_factor = 0.3,
+        .mitigated_cwes = &.{ 78, 88 },
+        .requires_correct_usage = false,
+    },
+    .{
+        .name = "isxdigit",
+        .category = .input_validation,
+        .effectiveness = .conditional,
+        .confidence_factor = 0.3,
+        .mitigated_cwes = &.{ 78, 88 },
+        .requires_correct_usage = false,
+    },
 
     // Bounds checking
     .{
@@ -126,6 +183,22 @@ const SANITIZER_FUNCTIONS = [_]SanitizerInfo{
         .mitigated_cwes = &.{ 120, 119, 678 },
         .requires_correct_usage = true,
     },
+    .{
+        .name = "strlcpy",
+        .category = .bounds_check,
+        .effectiveness = .high,
+        .confidence_factor = 0.2,
+        .mitigated_cwes = &.{ 120, 119 },
+        .requires_correct_usage = true,
+    },
+    .{
+        .name = "strlcat",
+        .category = .bounds_check,
+        .effectiveness = .high,
+        .confidence_factor = 0.2,
+        .mitigated_cwes = &.{ 120, 119 },
+        .requires_correct_usage = true,
+    },
 
     // Memory safe variants (C11 Annex K)
     .{
@@ -154,6 +227,46 @@ const SANITIZER_FUNCTIONS = [_]SanitizerInfo{
     },
     .{
         .name = "strerror_s",
+        .category = .memory_safe,
+        .effectiveness = .high,
+        .confidence_factor = 0.15,
+        .mitigated_cwes = &.{ 120, 119 },
+        .requires_correct_usage = false,
+    },
+    .{
+        .name = "memset_s",
+        .category = .memory_safe,
+        .effectiveness = .high,
+        .confidence_factor = 0.15,
+        .mitigated_cwes = &.{ 120, 119 },
+        .requires_correct_usage = false,
+    },
+    .{
+        .name = "memmove_s",
+        .category = .memory_safe,
+        .effectiveness = .high,
+        .confidence_factor = 0.15,
+        .mitigated_cwes = &.{ 120, 119 },
+        .requires_correct_usage = false,
+    },
+    .{
+        .name = "strncpy_s",
+        .category = .memory_safe,
+        .effectiveness = .high,
+        .confidence_factor = 0.15,
+        .mitigated_cwes = &.{ 120, 119 },
+        .requires_correct_usage = false,
+    },
+    .{
+        .name = "strncat_s",
+        .category = .memory_safe,
+        .effectiveness = .high,
+        .confidence_factor = 0.15,
+        .mitigated_cwes = &.{ 120, 119 },
+        .requires_correct_usage = false,
+    },
+    .{
+        .name = "gets_s",
         .category = .memory_safe,
         .effectiveness = .high,
         .confidence_factor = 0.15,
@@ -194,6 +307,62 @@ const SANITIZER_FUNCTIONS = [_]SanitizerInfo{
         .mitigated_cwes = &.{78},
         .requires_correct_usage = true,
     },
+    .{
+        .name = "strtold",
+        .category = .type_conversion,
+        .effectiveness = .conditional,
+        .confidence_factor = 0.35,
+        .mitigated_cwes = &.{78},
+        .requires_correct_usage = true,
+    },
+    .{
+        .name = "strtoimax",
+        .category = .type_conversion,
+        .effectiveness = .conditional,
+        .confidence_factor = 0.35,
+        .mitigated_cwes = &.{78},
+        .requires_correct_usage = true,
+    },
+    .{
+        .name = "strtoumax",
+        .category = .type_conversion,
+        .effectiveness = .conditional,
+        .confidence_factor = 0.35,
+        .mitigated_cwes = &.{78},
+        .requires_correct_usage = true,
+    },
+    .{
+        .name = "atoi",
+        .category = .type_conversion,
+        .effectiveness = .conditional,
+        .confidence_factor = 0.35,
+        .mitigated_cwes = &.{78},
+        .requires_correct_usage = true,
+    },
+    .{
+        .name = "atol",
+        .category = .type_conversion,
+        .effectiveness = .conditional,
+        .confidence_factor = 0.35,
+        .mitigated_cwes = &.{78},
+        .requires_correct_usage = true,
+    },
+    .{
+        .name = "atoll",
+        .category = .type_conversion,
+        .effectiveness = .conditional,
+        .confidence_factor = 0.35,
+        .mitigated_cwes = &.{78},
+        .requires_correct_usage = true,
+    },
+    .{
+        .name = "atof",
+        .category = .type_conversion,
+        .effectiveness = .conditional,
+        .confidence_factor = 0.35,
+        .mitigated_cwes = &.{78},
+        .requires_correct_usage = true,
+    },
 
     // Null terminator enforcement
     .{
@@ -203,6 +372,84 @@ const SANITIZER_FUNCTIONS = [_]SanitizerInfo{
         .confidence_factor = 0.5,
         .mitigated_cwes = &.{ 120, 119 },
         .requires_correct_usage = true,
+    },
+    .{
+        .name = "strnlen_s",
+        .category = .null_terminate,
+        .effectiveness = .partial,
+        .confidence_factor = 0.5,
+        .mitigated_cwes = &.{ 120, 119 },
+        .requires_correct_usage = true,
+    },
+
+    // Escape functions
+    .{
+        .name = "html_escape",
+        .category = .escaping,
+        .effectiveness = .high,
+        .confidence_factor = 0.2,
+        .mitigated_cwes = &.{79}, // XSS
+        .requires_correct_usage = false,
+    },
+    .{
+        .name = "url_encode",
+        .category = .escaping,
+        .effectiveness = .high,
+        .confidence_factor = 0.2,
+        .mitigated_cwes = &.{79}, // XSS
+        .requires_correct_usage = false,
+    },
+    .{
+        .name = "sql_escape",
+        .category = .escaping,
+        .effectiveness = .high,
+        .confidence_factor = 0.2,
+        .mitigated_cwes = &.{89}, // SQL Injection
+        .requires_correct_usage = false,
+    },
+    .{
+        .name = "shell_escape",
+        .category = .escaping,
+        .effectiveness = .high,
+        .confidence_factor = 0.2,
+        .mitigated_cwes = &.{78}, // Command Injection
+        .requires_correct_usage = false,
+    },
+
+    // Path sanitization
+    .{
+        .name = "realpath",
+        .category = .escaping,
+        .effectiveness = .conditional,
+        .confidence_factor = 0.4,
+        .mitigated_cwes = &.{22}, // Path Traversal
+        .requires_correct_usage = true,
+    },
+    .{
+        .name = "canonicalize_file_name",
+        .category = .escaping,
+        .effectiveness = .conditional,
+        .confidence_factor = 0.4,
+        .mitigated_cwes = &.{22}, // Path Traversal
+        .requires_correct_usage = true,
+    },
+
+    // Memory clearing (prevents info leaks)
+    .{
+        .name = "explicit_bzero",
+        .category = .memory_safe,
+        .effectiveness = .high,
+        .confidence_factor = 0.1,
+        .mitigated_cwes = &.{200}, // Information Exposure
+        .requires_correct_usage = false,
+    },
+    .{
+        .name = "SecureZeroMemory",
+        .category = .memory_safe,
+        .effectiveness = .high,
+        .confidence_factor = 0.1,
+        .mitigated_cwes = &.{200}, // Information Exposure
+        .requires_correct_usage = false,
     },
 };
 
@@ -242,7 +489,7 @@ pub const SanitizerRegistry = struct {
 
         for (SANITIZER_FUNCTIONS) |info| {
             registry.sanitizers.put(info.name, info) catch |err| {
-                std.log.err("SanitizerRegistry: Failed to register sanitizer '{s}': {}", .{ info.name, err });
+                log.err("SanitizerRegistry: Failed to register sanitizer '{s}': {}", .{ info.name, err });
                 return err;
             };
         }

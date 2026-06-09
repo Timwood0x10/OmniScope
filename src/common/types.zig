@@ -1,16 +1,27 @@
 //! Unified Type Definitions for OmniScope
 //!
-//! This module provides the canonical type definitions used across all analysis passes.
-//! All modules should import types from here to ensure consistency and eliminate duplication.
+//! This module provides the **canonical (single source of truth)** type definitions
+//! used across all analysis passes. All modules should import types from here to
+//! ensure consistency and eliminate duplication.
 //!
-//! Centralizes:
+//! ## Single Source of Truth (SSOT)
+//!
+//! This is the **ONLY** place where fundamental types are defined. Other modules must:
+//! - Import from here (preferred)
+//! - Re-export from here (for backward compatibility)
+//! - NEVER define their own versions of these types
+//!
+//! Centralized types:
+//! - **Severity** (issue severity levels) ← SSOT for this enum
 //! - Location (source code position)
-//! - Severity (issue severity levels)
 //! - IssueKind (issue category enumeration)
+//! - Confidence (detection confidence level)
 //! - ZoneTag (memory zone classification for FFI detection)
 //! - Tag (semantic function tags)
+//! - SemanticSurface (issue provenance classification)
 //!
 //! Design principle: Single source of truth for core types.
+//! Migration completed: 2026-05-31 (unified from 3 duplicate definitions)
 
 const std = @import("std");
 
@@ -100,10 +111,36 @@ pub const Location = struct {
 // Severity
 // ============================================================================
 
-/// Issue severity level.
+/// Issue severity level (ordered by importance).
+///
+/// This is the **single source of truth** for severity levels across the entire project.
+/// All modules must import from here, NEVER define their own Severity enum.
 ///
 /// Ordered from lowest to highest severity. Used for prioritization,
-/// filtering, and display formatting in diagnostics output.
+/// filtering, threshold comparison, and display formatting in diagnostics output.
+///
+/// ## Migration Note (2026-05-31)
+/// Previously duplicated in:
+/// - `src/types/main_config.zig` (deleted, now imports from here)
+/// - `src/diag/aggregator.zig` (had different OutputSeverity, cleaned up)
+///
+/// ## Usage Examples
+/// ```zig
+/// const types = @import("common/types");
+///
+/// // Parse from CLI argument
+/// if (types.Severity.parse("high")) |sev| {
+///     // Use parsed severity
+/// }
+///
+/// // Threshold filtering
+/// if (issue.severity.meetsThreshold(.high)) {
+///     // Report this issue
+/// }
+///
+/// // Display
+/// std.log.info("Severity: {s}", .{sev.displayName()});
+/// ```
 pub const Severity = enum(u8) {
     /// Low severity: informational or minor issues.
     low = 0,
@@ -114,7 +151,29 @@ pub const Severity = enum(u8) {
     /// Critical severity: severe vulnerabilities that must be fixed immediately.
     critical = 3,
 
-    /// Convert severity to string representation.
+    /// Parse severity from string (case-sensitive for CLI consistency).
+    ///
+    /// Returns the matching severity variant, or null if invalid.
+    ///
+    /// ## Migration from main_config.Severity.parse()
+    /// This method replaces the duplicate definition in `src/types/main_config.zig`.
+    /// Behavior is identical: case-sensitive exact match.
+    ///
+    /// ## Example
+    /// ```zig
+    /// const sev = Severity.parse("high") orelse return error.InvalidSeverity;
+    /// ```
+    pub fn parse(name: []const u8) ?Severity {
+        if (std.mem.eql(u8, name, "low")) return .low;
+        if (std.mem.eql(u8, name, "medium")) return .medium;
+        if (std.mem.eql(u8, name, "high")) return .high;
+        if (std.mem.eql(u8, name, "critical")) return .critical;
+        return null;
+    }
+
+    /// Convert severity to lowercase string representation.
+    ///
+    /// Used in JSON/SARIF output and machine-readable formats.
     pub fn toString(self: Severity) []const u8 {
         return switch (self) {
             .low => "low",
@@ -122,6 +181,50 @@ pub const Severity = enum(u8) {
             .high => "high",
             .critical => "critical",
         };
+    }
+
+    /// Convert severity to uppercase display name.
+    ///
+    /// Used in console output, reports, and human-readable messages.
+    /// Example: `.high` → `"HIGH"`
+    pub fn displayName(self: Severity) []const u8 {
+        return switch (self) {
+            .low => "LOW",
+            .medium => "MEDIUM",
+            .high => "HIGH",
+            .critical => "CRITICAL",
+        };
+    }
+
+    /// Convert severity to numeric value (u8) for serialization/comparison.
+    ///
+    /// ## Migration from main_config.Severity.toCommonSeverity()
+    /// This method replaces `toCommonSeverity()` which was specific to main_config.
+    /// Now uses standard Zig `@intFromEnum()` internally.
+    ///
+    /// ## Example
+    /// ```zig
+    /// const numeric_value: u8 = severity.toInt();
+    /// // Result: 0=low, 1=medium, 2=high, 3=critical
+    /// ```
+    pub fn toInt(self: Severity) u8 {
+        return @intFromEnum(self);
+    }
+
+    /// Check if this severity meets or exceeds a minimum threshold.
+    ///
+    /// Used for filtering issues by minimum severity level.
+    /// Returns true if self >= minimum (numeric comparison).
+    ///
+    /// ## Example
+    /// ```zig
+    /// // Only report high/critical issues
+    /// if (issue.severity.meetsThreshold(.high)) {
+    ///     try report(issue);
+    /// }
+    /// ```
+    pub fn meetsThreshold(self: Severity, minimum: Severity) bool {
+        return @intFromEnum(self) >= @intFromEnum(minimum);
     }
 
     /// Get ANSI color code for terminal output.
@@ -169,8 +272,13 @@ pub const IssueKind = enum {
     command_injection,
     /// Buffer overflow vulnerability (CWE-120).
     buffer_overflow,
+    /// Integer overflow or underflow (CWE-190/191).
+    integer_overflow,
     /// Double free across language boundary (CWE-415).
     double_free,
+    /// FFI contract mismatch - wrong release function used for allocation (CWE-763).
+    /// Example: SSL_new allocated but BIO_free called instead of SSL_free.
+    contract_mismatch,
     /// Format string vulnerability (CWE-134).
     format_string,
     /// Malloc result used without null check (CWE-252).
@@ -181,8 +289,12 @@ pub const IssueKind = enum {
     borrow_escape,
     /// Callback signature does not match receiver expectation (CWE-688).
     callback_signature_mismatch,
+    /// Callback ownership risk - function pointer parameter stored to global (CWE-825).
+    callback_ownership_risk,
     /// Free called on non-malloc pointer (CWE-590).
     invalid_free,
+    /// Write to immutable memory - writing through const-qualified pointer (CWE-757).
+    write_to_immutable,
     /// Static buffer misuse - thread-unsafe functions like ctime, strerror (CWE-242).
     static_buffer_misuse,
     /// Data race - concurrent access without synchronization (CWE-362).
@@ -207,13 +319,17 @@ pub const IssueKind = enum {
             .use_after_free => "use_after_free",
             .command_injection => "command_injection",
             .buffer_overflow => "buffer_overflow",
+            .integer_overflow => "integer_overflow",
             .double_free => "double_free",
+            .contract_mismatch => "contract_mismatch",
             .format_string => "format_string",
             .malloc_unchecked => "malloc_unchecked",
             .null_dereference => "null_dereference",
             .borrow_escape => "borrow_escape",
             .callback_signature_mismatch => "callback_signature_mismatch",
+            .callback_ownership_risk => "callback_ownership_risk",
             .invalid_free => "invalid_free",
+            .write_to_immutable => "write_to_immutable",
             .static_buffer_misuse => "static_buffer_misuse",
             .data_race => "data_race",
             .thread_safety_violation => "thread_safety_violation",
@@ -237,13 +353,17 @@ pub const IssueKind = enum {
             .use_after_free => 416,
             .command_injection => 78,
             .buffer_overflow => 120,
+            .integer_overflow => 190, // Integer Overflow or Wrap-around
             .double_free => 415,
+            .contract_mismatch => 763,
             .format_string => 134,
             .malloc_unchecked => 252,
             .null_dereference => 476,
             .borrow_escape => 704,
             .callback_signature_mismatch => 688,
+            .callback_ownership_risk => 825,
             .invalid_free => 590,
+            .write_to_immutable => 757,
             .static_buffer_misuse => 242,
             .data_race => 362,
             .thread_safety_violation => 807,
@@ -266,13 +386,17 @@ pub const IssueKind = enum {
             .use_after_free => "Use after free across language boundary",
             .command_injection => "Command injection vulnerability",
             .buffer_overflow => "Buffer overflow vulnerability",
+            .integer_overflow => "Integer overflow or underflow",
             .double_free => "Double free across language boundary",
+            .contract_mismatch => "FFI contract mismatch - wrong release function used for allocation (e.g., SSL_new + BIO_free)",
             .format_string => "Format string vulnerability",
             .malloc_unchecked => "Malloc result used without null check",
             .null_dereference => "Null pointer dereference - nullable allocation used without guard",
             .borrow_escape => "Rust borrow escape - as_ptr result may dangle after local drop",
             .callback_signature_mismatch => "Callback signature does not match receiver expectation - potential ABI mismatch",
+            .callback_ownership_risk => "Function pointer parameter stored to global - caller controls callback lifetime, may dangle (CWE-825)",
             .invalid_free => "Free called on non-malloc pointer",
+            .write_to_immutable => "Write to immutable memory - writing through const-qualified pointer violates immutability contract (CWE-757)",
             .static_buffer_misuse => "Static buffer function misuse - thread-unsafe or data overwrite risk (ctime, strerror, etc.)",
             .data_race => "Data race - concurrent access without synchronization",
             .thread_safety_violation => "Thread safety violation - lock ordering issue or deadlock risk",
@@ -426,6 +550,77 @@ pub const Tag = enum {
 };
 
 // ============================================================================
+// SemanticSurface — Where does this issue originate? (P19-8)
+//
+// Classifies the "surface" or origin layer of an issue to enable
+// differential severity policies: boundary issues stay HIGH, internal
+// core heuristics get downgraded to diagnostic.
+// ============================================================================
+
+/// Semantic surface classification for issue provenance.
+/// Determines which severity policy applies per Phase 19.2 rules.
+pub const SemanticSurface = enum(u8) {
+    /// Issue is directly at an FFI/language boundary.
+    /// Examples: cross_language_free at JNI boundary, unsafe FFI call.
+    /// Policy: HIGH/CRITICAL allowed with standard evidence.
+    boundary,
+
+    /// Issue is in a function that PRODUCES values for FFI boundary.
+    /// Examples: factory function called by FFI wrapper, allocator used by bridge.
+    /// Policy: HIGH allowed if evidence is strong.
+    ffi_producer,
+
+    /// Issue can REACH an FFI boundary via data flow / call graph.
+    /// Examples: leaked pointer passed to FFI function 3 frames up.
+    /// Policy: MEDIUM max unless ownership violation is clear.
+    reachable_from_boundary,
+
+    /// Issue is inside third-party / dependency core code.
+    /// Examples: SQLite internals, OpenSSL EVP functions, libc++ std::*.
+    /// Policy: diagnostic default; MEDIUM only with strong structural evidence.
+    internal_core,
+
+    /// Issue is inside language runtime internals.
+    /// Examples: Rust drop_in_place, Go runtime.mallocgc, Zig __zig_dealloc.
+    /// Policy: diagnostic or suppressed.
+    runtime_internal,
+
+    /// Surface could not be determined.
+    /// Policy: conservative — treat as internal_core for safety.
+    unknown,
+
+    /// Human-readable name for logging and debug output.
+    pub fn name(self: SemanticSurface) []const u8 {
+        return switch (self) {
+            .boundary => "boundary",
+            .ffi_producer => "ffi_producer",
+            .reachable_from_boundary => "reachable_from_boundary",
+            .internal_core => "internal_core",
+            .runtime_internal => "runtime_internal",
+            .unknown => "unknown",
+        };
+    }
+
+    /// Check if this surface allows HIGH severity reports.
+    pub fn allowsHigh(self: SemanticSurface) bool {
+        return switch (self) {
+            .boundary, .ffi_producer => true,
+            .reachable_from_boundary => false,
+            .internal_core, .runtime_internal, .unknown => false,
+        };
+    }
+
+    /// Check if this surface allows MEDIUM severity reports.
+    pub fn allowsMedium(self: SemanticSurface) bool {
+        return switch (self) {
+            .boundary, .ffi_producer, .reachable_from_boundary => true,
+            .internal_core => false,
+            .runtime_internal, .unknown => false,
+        };
+    }
+};
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -475,16 +670,61 @@ test "Severity - toString" {
     try std.testing.expectEqualStrings("critical", Severity.critical.toString());
 }
 
+test "Severity - parse valid values" {
+    // Migrated from src/types/main_config.zig tests
+    try std.testing.expectEqual(Severity.low, Severity.parse("low").?);
+    try std.testing.expectEqual(Severity.medium, Severity.parse("medium").?);
+    try std.testing.expectEqual(Severity.high, Severity.parse("high").?);
+    try std.testing.expectEqual(Severity.critical, Severity.parse("critical").?);
+}
+
+test "Severity - parse invalid values" {
+    // Case-sensitive: uppercase should fail (backward compatible with main_config)
+    try std.testing.expect(Severity.parse("invalid") == null);
+    try std.testing.expect(Severity.parse("") == null);
+    try std.testing.expect(Severity.parse("LOW") == null);
+    try std.testing.expect(Severity.parse("Low") == null);
+    try std.testing.expect(Severity.parse("HIGH") == null);
+}
+
+test "Severity - displayName" {
+    try std.testing.expectEqualStrings("LOW", Severity.low.displayName());
+    try std.testing.expectEqualStrings("MEDIUM", Severity.medium.displayName());
+    try std.testing.expectEqualStrings("HIGH", Severity.high.displayName());
+    try std.testing.expectEqualStrings("CRITICAL", Severity.critical.displayName());
+}
+
+test "Severity - toInt" {
+    // Migrated from main_config.Severity.toCommonSeverity()
+    try std.testing.expectEqual(@as(u8, 0), Severity.low.toInt());
+    try std.testing.expectEqual(@as(u8, 1), Severity.medium.toInt());
+    try std.testing.expectEqual(@as(u8, 2), Severity.high.toInt());
+    try std.testing.expectEqual(@as(u8, 3), Severity.critical.toInt());
+}
+
+test "Severity - meetsThreshold" {
+    // Low meets low threshold
+    try std.testing.expect(Severity.low.meetsThreshold(.low));
+    // High meets low threshold
+    try std.testing.expect(Severity.high.meetsThreshold(.low));
+    // Critical meets high threshold
+    try std.testing.expect(Severity.critical.meetsThreshold(.high));
+    // Low does NOT meet high threshold
+    try std.testing.expect(!Severity.low.meetsThreshold(.high));
+    // Medium does NOT meet critical threshold
+    try std.testing.expect(!Severity.medium.meetsThreshold(.critical));
+}
+
 test "IssueKind - count matches expected" {
-    // Verify we have exactly 19 issue kinds (18 known + 1 unknown)
+    // Verify we have exactly 20 issue kinds (19 known + 1 unknown)
     const kinds = [_]IssueKind{
-        .ffi_unsafe_call,     .unchecked_return,     .type_mismatch, .ffi_type_mismatch,
-        .cross_language_leak, .cross_language_free,  .memory_leak,   .use_after_free,
-        .command_injection,   .buffer_overflow,      .double_free,   .format_string,
-        .malloc_unchecked,    .null_dereference,     .borrow_escape, .callback_signature_mismatch,
-        .invalid_free,        .static_buffer_misuse, .unknown,
+        .ffi_unsafe_call,             .unchecked_return,    .type_mismatch,        .ffi_type_mismatch,
+        .cross_language_leak,         .cross_language_free, .memory_leak,          .use_after_free,
+        .command_injection,           .buffer_overflow,     .double_free,          .contract_mismatch,
+        .format_string,               .malloc_unchecked,    .null_dereference,     .borrow_escape,
+        .callback_signature_mismatch, .invalid_free,        .static_buffer_misuse, .unknown,
     };
-    try std.testing.expectEqual(@as(usize, 19), kinds.len);
+    try std.testing.expectEqual(@as(usize, 20), kinds.len);
 }
 
 test "IssueKind - CWE mapping consistency" {

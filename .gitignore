@@ -1,11 +1,13 @@
 # IDE and Editor
 .vscode/
+.joycode/
 .idea/
 .claude/
 .codeartsdoer/
 .arts/
+.codegraph/
 
-Claude.md
+#Claude.md
 AGENTS.md
 
 *.swp

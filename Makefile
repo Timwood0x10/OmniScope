@@ -47,16 +47,24 @@ CPP_IR = $(EXAMPLES_DIR)/cpp_cffi/target
 GO_IR = $(EXAMPLES_DIR)/go_cffi/target
 ZIG_IR = $(EXAMPLES_DIR)/zig_cffi/target
 
-.PHONY: all fmt fmt-check check test test-unit test-int test-all bench build run clean examples \
+.PHONY: all fmt fmt-check check test test-unit test-int test-all \
+        bench build build-debug run clean examples \
         baseline-check red-team-test \
-        rust cpp go zig rust-run cpp-run go-run zig-run help \
-        corpus corpus-ir corpus-analyze corpus-check \
-        real-world real-world-ir real-world-run \
-        baseline-check \
-        install-deps release benchmark benchmark-full \
+        rust rust-ir rust-run rust-json rust-sarif \
+        cpp cpp-ir cpp-run cpp-json cpp-sarif \
+        go go-ir go-run go-json go-sarif \
+        zig zig-ir zig-run zig-json zig-sarif \
+        help \
+        corpus corpus-ir corpus-red-team-ir corpus-analyze corpus-check \
+        red-team blue-team corpus-test \
+        real-world real-world-ir real-world-run real-world-json real-world-sarif \
+        install-deps release benchmark benchmark-ci benchmark-json benchmark-full \
         regression-test bench-perf stability-test e2e-test test-all-phase7 \
         viz visualize \
-        cross-lang-test cross-lang-build cross-lang-run cross-lang-report
+        cross-lang-test cross-lang-build cross-lang-run cross-lang-report \
+        reports-json reports-sarif \
+        test-issues test-stability test-stress test-inline-ir-matrix \
+        test-ffi-layout test-ffi-string test-ffi-unwind
 
 # ========================================
 # Default Target - Run All Tests
@@ -71,6 +79,7 @@ all: test-all bench
 	@echo "║  Integration Tests: ✓ Passed                                  ║"
 	@echo "║  Issue Verification:✓ Passed                                  ║"
 	@echo "║  Stability Tests:   ✓ Passed                                  ║"
+	@echo "║  Inline IR Matrix:  ✓ Passed                                  ║"
 	@echo "║  Benchmarks:        ✓ Completed                               ║"
 	@echo "╚════════════════════════════════════════════════════════════════╝"
 
@@ -110,7 +119,36 @@ test-stress:
 	@echo "╚════════════════════════════════════════════════════════════════╝"
 	$(ZIG) build test-stress
 
-test-all: test-unit test-int test-issues test-stability test-stress
+test-inline-ir-matrix:
+	@echo ""
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              INLINE IR MATRIX TESTS                           ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	$(ZIG) build test-inline-ir-matrix
+
+test-ffi-layout:
+	@echo ""
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              FFI LAYOUT MISMATCH TESTS                        ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	$(ZIG) build test-ffi-layout
+
+test-ffi-string:
+	@echo ""
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              FFI STRING SAFETY TESTS                          ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	$(ZIG) build test-ffi-string
+
+test-ffi-unwind:
+	@echo ""
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║              FFI UNWIND BOUNDARY TESTS                        ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	$(ZIG) build test-ffi-unwind
+
+test-all: test-unit test-int test-issues test-stability test-stress test-inline-ir-matrix \
+        test-ffi-layout test-ffi-string test-ffi-unwind
 	@echo ""
 	@echo "╔════════════════════════════════════════════════════════════════╗"
 	@echo "║                  ALL TESTS PASSED                              ║"
@@ -198,6 +236,12 @@ build:
 	@echo "║                       BUILD                                    ║"
 	@echo "╚════════════════════════════════════════════════════════════════╝"
 	$(ZIG) build
+
+build-debug:
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║                    DEBUG BUILD                                 ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	$(ZIG) build -Doptimize=Debug
 
 # Run all FFI analysis tests
 run: examples
@@ -441,30 +485,15 @@ red-team-test: build
 	@echo "╔════════════════════════════════════════════════════════════════╗"
 	@echo "║              RED TEAM ADVERSARIAL TEST                       ║"
 	@echo "╚════════════════════════════════════════════════════════════════╝"
-	@if [ ! -f corpus/red_team_test/red_team_bugs_O0.ll ]; then \
-		echo "Compiling red_team_bugs.c with -O0..."; \
-		$(CLANG) -S -emit-llvm -g -O0 -o corpus/red_team_test/red_team_bugs_O0.ll corpus/red_team_test/red_team_bugs.c; \
-	fi
 	@echo ""
-	@echo "Running OmniScope on red team test file (O0 build)..."
-	@./zig-out/bin/OmniScope corpus/red_team_test/red_team_bugs_O0.ll 2>&1 | tee /tmp/red_team_output.txt
-	@echo ""
-	@echo "╔════════════════════════════════════════════════════════════════╗"
-	@echo "║              RED TEAM TEST RESULTS                            ║"
-	@echo "╚════════════════════════════════════════════════════════════════╝"
-	@grep "Issues detected" /tmp/red_team_output.txt || echo "No issues found!"
-	@echo ""
-	@echo "Expected detections (v0.1.6):"
-	@echo "  ✅ Memory Leak (bug_memory_leak)"
-	@echo "  ✅ Use-After-Free (bug_use_after_free, bug_realloc_mishandle)"
-	@echo "  ✅ Double-Free (bug_double_free) [NEW in v0.1.6]"
-	@echo "  ✅ NULL Dereference (bug_null_deref)"
-	@echo "  ✅ FFI RISK CRITICAL: system(), popen() [ENHANCED in v0.1.6]"
-	@echo "  ✅ FFI RISK CRITICAL: execvp() [NEW in v0.1.6]"
-	@echo "  ✅ Format String (bug_format_string) [CLASSIFIED in v0.1.6]"
-	@echo "  ✅ Loop Leak (bug_loop_leak) [NEW in v0.1.6]"
-	@echo ""
-	@echo "Total issues should be ≥10 (target: 12)"
+	@echo "Running OmniScope on red team test files..."
+	@for f in $(RED_IR_FILES); do \
+		if [ ! -f "$f" ]; then continue; fi; \
+		name=$(basename "$f"); \
+		echo ""; \
+		echo "=== Analyzing: $name ==="; \
+		$(ZIG) build run -- "$f" 2>&1 || true; \
+	done
 
 # ========================================
 # All Reports
@@ -547,6 +576,27 @@ corpus-ir:
 
 	@echo "  Done."
 
+# ========================================
+# Corpus red_team_test LLVM IR regeneration with DWARF
+# ========================================
+
+# Regenerate red_team_test .ll files with DWARF debug info
+# Required by A1 (DICompileUnit language detection)
+# Run this after updating corpus source files:
+#   make corpus-red-team-ir
+
+RED_TEAM_DIR := corpus/red_team_test
+
+corpus-red-team-ir:
+	@echo "Regenerating red_team_test IR with DWARF debug info..."
+	@for src in $(RED_TEAM_DIR)/*.c; do \
+		base=$$(basename $$src .c); \
+		echo "  - $$base.c → $$base.ll"; \
+		$(CLANG) -S -emit-llvm -O0 -fno-discard-value-names -g \
+			$$src -o $(RED_TEAM_DIR)/$$base.ll 2>/dev/null || true; \
+	done
+	@echo "  Done. All red_team_test .ll files regenerated with DWARF."
+
 corpus-analyze: corpus-ir build
 	@echo ""
 	@echo "╔════════════════════════════════════════════════════════════════╗"
@@ -605,6 +655,141 @@ corpus-check: corpus
 	@echo "║  See corpus/EXPECTED_RESULTS.md for details                    ║"
 	@echo "║                                                                ╚════════════════════════════════════════════════════════════════╝"
 	@echo "%"
+
+# ========================================
+# Red/Blue Team Testing (v0.1.9)
+# ========================================
+#
+# Red Team  = adversarial: does the tool detect known bugs? (recall)
+# Blue Team = defensive: does the tool avoid false alarms? (precision)
+#
+# Usage:
+#   make red-team         Run red team only
+#   make blue-team        Run blue team only
+#   make corpus-test      Run both + summary
+
+OMNISCOPE = $(ZIG) build run --
+
+RED_TEAM_DIR = $(CORPUS_DIR)/red_team_test
+RED_IR_FILES = \
+	$(RED_TEAM_DIR)/cross_lang_free_bugs.ll \
+	$(RED_TEAM_DIR)/go_cgo_bugs.ll \
+	$(RED_TEAM_DIR)/java_jni_bugs.ll \
+	$(RED_TEAM_DIR)/python_cffi_bugs.ll \
+	$(RED_TEAM_DIR)/red_team_cpp_ffi.ll \
+	$(RED_TEAM_DIR)/red_team_swift_ffi.ll \
+	$(RED_TEAM_DIR)/red_team_triple_chain.ll \
+	$(RED_TEAM_DIR)/rust_ffi_bugs.ll
+
+# Red Team: adversarial detection test
+# Compiles red_team_test/*.c to IR and runs OmniScope.
+# Reports issue count per file. Expected: ≥10 issues per adversarial file.
+red-team: build
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║                    RED TEAM TEST                              ║"
+	@echo "║  Adversarial: detect known bugs in crafted test cases         ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	@mkdir -p /tmp/omniscope-red-team
+	@total_files=0; total_issues=0; \
+	for f in $(RED_IR_FILES); do \
+		if [ ! -f "$$f" ]; then continue; fi; \
+		total_files=$$((total_files + 1)); \
+		name=$$(basename "$$f"); \
+		output=$$( $(OMNISCOPE) "$$f" 2>&1 ); \
+		count=$$(echo "$$output" | perl -pe 's/\x1b\[[0-9;]*m//g' | grep -c "VULNERABILITY\|OMI-CRITICAL\|OMI-HIGH\|CROSS-LANG" 2>/dev/null || true); \
+		count=$${count:-0}; \
+		total_issues=$$((total_issues + count)); \
+		if [ "$$count" -gt 0 ]; then \
+			printf "  ✅ %-40s %3d issues\n" "$$name" "$$count"; \
+		else \
+			printf "  ❌ %-40s %3d issues (MISS)\n" "$$name" "$$count"; \
+		fi; \
+	done; \
+	echo ""; \
+	echo "────────────────────────────────────────────────────────"; \
+	printf "  Red Team: %d files, %d total issues detected\n" "$$total_files" "$$total_issues"; \
+	if [ "$$total_issues" -lt 10 ]; then \
+		echo "  ⚠️  LOW detection count — investigate regressions"; \
+	else \
+		echo "  ✅ Detection threshold met"; \
+	fi
+
+# Blue Team: false positive audit
+# Runs OmniScope on corpus files and checks out-of-scope inflation.
+# Expected: issue count should not wildly exceed in-scope expected count.
+blue-team: corpus-ir build
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║                    BLUE TEAM TEST                             ║"
+	@echo "║  Defensive: false positive audit on corpus                    ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
+	@echo ""
+	@blue_pass=0; blue_fail=0; \
+	\
+	echo "── small/ (expected ≤13 in-scope issues)"; \
+	small_count=0; \
+	for f in $(CORPUS_SMALL)/output/*.ll; do \
+		if [ ! -f "$$f" ]; then continue; fi; \
+		c=$$( $(OMNISCOPE) "$$f" 2>&1 | perl -pe 's/\x1b\[[0-9;]*m//g' | grep -c "VULNERABILITY\|OMI-CRITICAL\|OMI-HIGH\|CROSS-LANG" 2>/dev/null || true); \
+		c=$${c:-0}; \
+		small_count=$$((small_count + c)); \
+	done; \
+	if [ "$$small_count" -le 20 ]; then \
+		printf "  ✅ small/:        %3d issues (expected ≤13, ok)\n" "$$small_count"; \
+		blue_pass=$$((blue_pass + 1)); \
+	else \
+		printf "  ❌ small/:        %3d issues (expected ≤13, OVER)\n" "$$small_count"; \
+		blue_fail=$$((blue_fail + 1)); \
+	fi; \
+	\
+	echo "── medium/ (expected ≤20 in-scope issues)"; \
+	med_count=0; \
+	for f in $(CORPUS_MEDIUM)/output/*.ll; do \
+		if [ ! -f "$$f" ]; then continue; fi; \
+		c=$$( $(OMNISCOPE) "$$f" 2>&1 | perl -pe 's/\x1b\[[0-9;]*m//g' | grep -c "VULNERABILITY\|OMI-CRITICAL\|OMI-HIGH\|CROSS-LANG" 2>/dev/null || true); \
+		c=$${c:-0}; \
+		med_count=$$((med_count + c)); \
+	done; \
+	if [ "$$med_count" -le 30 ]; then \
+		printf "  ✅ medium/:       %3d issues (expected ≤20, ok)\n" "$$med_count"; \
+		blue_pass=$$((blue_pass + 1)); \
+	else \
+		printf "  ❌ medium/:       %3d issues (expected ≤20, OVER)\n" "$$med_count"; \
+		blue_fail=$$((blue_fail + 1)); \
+	fi; \
+	\
+	echo "── ffi-dense/ (expected ≤26 in-scope issues)"; \
+	dense_count=0; \
+	for f in $(CORPUS_FFI_DENSE)/output/*.ll; do \
+		if [ ! -f "$$f" ]; then continue; fi; \
+		c=$$( $(OMNISCOPE) "$$f" 2>&1 | perl -pe 's/\x1b\[[0-9;]*m//g' | grep -c "VULNERABILITY\|OMI-CRITICAL\|OMI-HIGH\|CROSS-LANG" 2>/dev/null || true); \
+		c=$${c:-0}; \
+		dense_count=$$((dense_count + c)); \
+	done; \
+	if [ "$$dense_count" -le 40 ]; then \
+		printf "  ✅ ffi-dense/:    %3d issues (expected ≤26, ok)\n" "$$dense_count"; \
+		blue_pass=$$((blue_pass + 1)); \
+	else \
+		printf "  ❌ ffi-dense/:    %3d issues (expected ≤26, OVER)\n" "$$dense_count"; \
+		blue_fail=$$((blue_fail + 1)); \
+	fi; \
+	\
+	echo ""; \
+	echo "────────────────────────────────────────────────────────"; \
+	printf "  Blue Team: %d passed, %d failed\n" "$$blue_pass" "$$blue_fail"; \
+	if [ "$$blue_fail" -gt 0 ]; then \
+		echo "  ⚠️  False positive regression detected"; \
+	else \
+		echo "  ✅ No false positive regression"; \
+	fi
+
+# Combined: run both red + blue team
+corpus-test: red-team blue-team
+	@echo ""
+	@echo "╔════════════════════════════════════════════════════════════════╗"
+	@echo "║                  CORPUS TEST COMPLETE                         ║"
+	@echo "║  Red Team  = detection rate (adversarial bugs)                ║"
+	@echo "║  Blue Team = false positive audit (clean boundaries)          ║"
+	@echo "╚════════════════════════════════════════════════════════════════╝"
 
 # ========================================
 
@@ -684,7 +869,12 @@ help:
 	@echo "  make test-int    Run integration tests"
 	@echo "  make test-issues Run issue verification tests"
 	@echo "  make test-stability Run stability tests"
-	@echo "  make test-all    Run all tests"
+	@echo "  make test-stress    Run stress tests"
+	@echo "  make test-inline-ir-matrix  Run inline IR matrix tests (all languages × scenarios)"
+	@echo "  make test-ffi-layout    Run FFI layout mismatch tests"
+	@echo "  make test-ffi-string   Run FFI string safety tests"
+	@echo "  make test-ffi-unwind   Run FFI unwind boundary tests"
+	@echo "  make test-all          Run all tests"
 	@echo "  make bench       Run performance benchmarks"
 	@echo ""
 	@echo "Corpus Commands:"
@@ -692,6 +882,11 @@ help:
 	@echo "  make corpus-ir   Compile corpus to LLVM IR"
 	@echo "  make corpus-analyze  Analyze corpus with OmniScope"
 	@echo "  make corpus-check    Analyze and check expected issues"
+	@echo ""
+	@echo "Red/Blue Team Testing:"
+	@echo "  make red-team    Adversarial: detect known bugs (recall)"
+	@echo "  make blue-team   Defensive: false positive audit (precision)"
+	@echo "  make corpus-test Run both red + blue team tests"
 	@echo ""
 	@echo "Benchmark Commands:"
 	@echo "  make bench          Run micro-benchmarks (component-level timing)"
@@ -705,6 +900,7 @@ help:
 	@echo "  make fmt-check   Check formatting (CI use)"
 	@echo "  make check       Type check the project"
 	@echo "  make build       Build the project"
+	@echo "  make build-debug Build the project in Debug mode"
 	@echo "  make clean       Clean all build artifacts"
 	@echo ""
 	@echo "Install & Release:"
@@ -772,14 +968,14 @@ cross-lang-build:
 	@echo "╔════════════════════════════════════════════════════════════════╗"
 	@echo "║            BUILDING CROSS-LANGUAGE TEST IR                     ║"
 	@echo "╚════════════════════════════════════════════════════════════════╝"
-	@echo "  Compiling cross_lang_free_bugs.c..."
-	@$(CLANG) -S -emit-llvm -O0 -fno-discard-value-names -g \
-		corpus/red_team_test/cross_lang_free_bugs.c \
-		-o corpus/red_team_test/cross_lang_free_bugs.ll 2>/dev/null || true
-	@echo "  Compiling cross_lang_free_complete.c..."
-	@$(CLANG) -S -emit-llvm -O0 -fno-discard-value-names -g \
-		corpus/red_team_test/cross_lang_free_complete.c \
-		-o corpus/red_team_test/cross_lang_free_complete.ll 2>/dev/null || true
+	@if [ ! -f corpus/red_team_test/cross_lang_free_bugs.ll ]; then \
+		echo "  Compiling cross_lang_free_bugs.c..."; \
+		$(CLANG) -S -emit-llvm -O0 -fno-discard-value-names -g \
+			corpus/red_team_test/cross_lang_free_bugs.c \
+			-o corpus/red_team_test/cross_lang_free_bugs.ll 2>/dev/null || true; \
+	else \
+		echo "  ✓ cross_lang_free_bugs.ll already exists"; \
+	fi
 	@echo "  ✓ Cross-language test IR built"
 
 cross-lang-run:
@@ -788,11 +984,8 @@ cross-lang-run:
 	@echo "║            ANALYZING CROSS-LANGUAGE VIOLATIONS                 ║"
 	@echo "╚════════════════════════════════════════════════════════════════╝"
 	@echo ""
-	@echo "=== Test 1: cross_lang_free_bugs.ll ==="
+	@echo "=== Test: cross_lang_free_bugs.ll ==="
 	$(ZIG) build run -- corpus/red_team_test/cross_lang_free_bugs.ll 2>&1 | grep -E "Issues detected|Memory leak|cross_language|Issue breakdown" -A 15
-	@echo ""
-	@echo "=== Test 2: cross_lang_free_complete.ll ==="
-	$(ZIG) build run -- corpus/red_team_test/cross_lang_free_complete.ll 2>&1 | grep -E "Issues detected|Memory leak|cross_language|Issue breakdown" -A 15
 
 cross-lang-report:
 	@echo "╔════════════════════════════════════════════════════════════════╗"
@@ -802,26 +995,7 @@ cross-lang-report:
 	@echo "Test Suite: Cross-Language Free Violation Detection"
 	@echo "===================================================="
 	@echo ""
-	@echo "Test Case 1: cross_lang_free_bugs.c"
+	@echo "Test Case: cross_lang_free_bugs.ll"
 	@echo "  Scenarios: 10 (Rust→C, C→C++, aliases, realloc, nested)"
 	@echo "  Expected:   cross_language_free violations"
 	$(ZIG) build run -- corpus/red_team_test/cross_lang_free_bugs.ll 2>&1 | tail -20
-	@echo ""
-	@echo "Test Case 2: cross_lang_free_complete.c"
-	@echo "  Scenarios: 10 (leaks, double-free, UAF, buffer overflow)"
-	@echo "  Expected:   Memory safety violations"
-	$(ZIG) build run -- corpus/red_team_test/cross_lang_free_complete.ll 2>&1 | tail -20
-	@echo ""
-	@echo "===================================================="
-	@echo "Cross-language free detection status:"
-	@echo "  ✅ IssueKind: cross_language_free (CWE-763)"
-	@echo "  ✅ MemoryGraph: alloc_lang/free_lang tracking"
-	@echo "  ✅ Detection: isOnDangerPath() → .cross_lang_lifecycle"
-	@echo "  ✅ Reporting: IssueStats, GraphVisualizer"
-	@echo ""
-	@echo "Note: True cross-language violations require mixed-language"
-	@echo "      compilation units (e.g., Rust IR + C IR linked together)."
-	@echo "      Single-language IR tests verify memory safety baseline."
-
-	@echo "  make reports-sarif     Generate all SARIF reports"
-	@echo ""

@@ -8,6 +8,7 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../../ir/llvm_safe.zig");
 
 const PassContext = @import("../../../pass/pass.zig").PassContext;
 const PassKind = @import("../../../pass/pass.zig").PassKind;
@@ -19,7 +20,7 @@ const IssueKind = @import("../../../diag/issue.zig").IssueKind;
 const Severity = @import("../../../diag/issue.zig").Severity;
 const FFIBoundary = @import("../../../diag/issue.zig").FFIBoundary;
 
-const ffi_semantics = @import("../ffi_semantics.zig");
+const ffi_semantics = @import("../ffi/ffi_semantics.zig");
 const noise_filter = @import("../../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../../ir/debug_info.zig").DebugInfoUtils;
 
@@ -35,6 +36,7 @@ const AnalysisContext = struct {
     allocator: std.mem.Allocator,
     boundary: *const FFIBoundary,
     value_map: std.AutoHashMap(c.LLVMValueRef, ValueInfo),
+    pass_ctx: *PassContext,
 };
 
 /// Vulnerability information with traceable path
@@ -218,7 +220,7 @@ fn isMallocUnchecked(malloc_result: c.LLVMValueRef, ctx: *AnalysisContext, bound
 
         // Only check next few instructions to avoid infinite loops
         // Stop at branch or other control flow
-        if (opcode == c.LLVMBr or opcode == c.LLVMRet or opcode == c.LLVMCall) {
+        if (opcode == c.LLVMBr or opcode == c.LLVMRet or llvm_safe.isCallOrInvoke(opcode)) {
             break;
         }
 
@@ -387,10 +389,14 @@ fn checkFormatStringVulnerability(
 
 /// Check if function call has command injection vulnerability
 ///
+/// W7: Requires taint confirmation — the argument must be tainted by
+/// the taint engine (user-controlled input) before reporting.
+/// SRT checks (global_provenance, readonly_param) suppress known-safe sources.
+///
 /// Arguments:
 ///   - func_name: Name of the called function
 ///   - args: Array of argument values
-///   - ctx: Analysis context
+///   - ctx: Analysis context (includes pass_ctx for taint/SRT access)
 ///
 /// Returns:
 ///   - Vulnerability info if detected, null otherwise
@@ -407,32 +413,43 @@ fn checkCommandInjectionVulnerability(
         return null;
     }
 
-    // Check if first argument is from parameter
     if (args.len == 0) return null;
 
     const command_arg = args[0];
-    if (ctx.value_map.get(command_arg)) |info| {
-        if (info.origin == .from_param) {
-            // Command from parameter - potential injection
-            const trace = try ctx.allocator.alloc([]const u8, 2);
-            trace[0] = try std.fmt.allocPrint(ctx.allocator, "Command argument in function {s}", .{info.location.func});
-            trace[1] = try std.fmt.allocPrint(ctx.allocator, "Passed to {s} without validation", .{func_name});
+    const arg_ref = @as(u64, @intFromPtr(command_arg));
 
-            return VulnerabilityInfo{
-                .vuln_type = .command_injection,
-                .severity = .critical,
-                .message = try std.fmt.allocPrint(
-                    ctx.allocator,
-                    "Command injection vulnerability: command from parameter used in {s}",
-                    .{func_name},
-                ),
-                .trace = trace,
-                .confidence = 0.95,
-            };
-        }
+    // R-4 + SRT: suppress known-safe argument sources
+    if (ctx.pass_ctx.semantic_resolution) |resolution_engine| {
+        const srt = resolution_engine.getSemanticTree();
+        // Global/const provenance — command is compile-time known, not injection
+        if (srt.hasKind(arg_ref, .global_provenance) != null) return null;
+        // Readonly param — const reference, unlikely injection vector
+        if (srt.hasKind(arg_ref, .readonly_param) != null) return null;
     }
 
-    return null;
+    // W7: Taint confirmation — only report if the argument is actually tainted
+    // by the taint engine (propagated from user-controlled source like argv/env).
+    // This eliminates FP where command strings come from hardcoded values,
+    // internal state, or non-user-controlled sources.
+    const arg_val_id = ctx.pass_ctx.getValueId(@intFromPtr(command_arg)) catch return null;
+    if (!ctx.pass_ctx.isTainted(arg_val_id)) return null;
+
+    // Taint confirmed — this is a real injection risk
+    const trace = try ctx.allocator.alloc([]const u8, 2);
+    trace[0] = try std.fmt.allocPrint(ctx.allocator, "Tainted command argument in function {s}", .{ctx.boundary.function_name});
+    trace[1] = try std.fmt.allocPrint(ctx.allocator, "Passed to {s} without sanitization", .{func_name});
+
+    return VulnerabilityInfo{
+        .vuln_type = .command_injection,
+        .severity = .critical,
+        .message = try std.fmt.allocPrint(
+            ctx.allocator,
+            "Command injection: tainted user input passed to {s}()",
+            .{func_name},
+        ),
+        .trace = trace,
+        .confidence = 0.90,
+    };
 }
 
 /// Get vulnerability description
@@ -561,7 +578,7 @@ pub const FFIBodyCheckPass = struct {
         if (@intFromPtr(func_name_ptr) != 0) {
             const func_name = std.mem.span(func_name_ptr);
             const func_loc = DebugInfoUtils.getFunctionLocation(func);
-            const classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+            const classification = ctx.classifyFunctionSurface(func_name, func_loc);
             if (!classification.origin.shouldReportByDefault()) return 0;
         }
         // Initialize analysis context
@@ -569,6 +586,7 @@ pub const FFIBodyCheckPass = struct {
             .allocator = ctx.allocator,
             .boundary = boundary,
             .value_map = std.AutoHashMap(c.LLVMValueRef, ValueInfo).init(ctx.allocator),
+            .pass_ctx = ctx,
         };
         defer analysis_ctx.value_map.deinit();
 
@@ -605,7 +623,7 @@ pub const FFIBodyCheckPass = struct {
                 const opcode = c.LLVMGetInstructionOpcode(inst);
 
                 // Check if this is a call instruction
-                if (opcode == c.LLVMCall) {
+                if (llvm_safe.isCallOrInvoke(opcode)) {
                     // Get the called function - callee is at num_operands - 1
                     const num_operands = @as(c_uint, @bitCast(c.LLVMGetNumOperands(inst)));
                     if (num_operands >= 1) {
@@ -668,15 +686,19 @@ pub const FFIBodyCheckPass = struct {
                                             .{ trace[0], trace[1] },
                                         );
 
-                                        const issue = Issue.init(
+                                        var issue = Issue.init(
                                             .ffi_unsafe_call,
                                             message,
                                             boundary.location,
                                             .medium,
                                             0.8,
                                         );
+                                        issue.owned = true;
 
                                         try ctx.addIssue(&issue);
+                                        ctx.allocator.free(trace[0]);
+                                        ctx.allocator.free(trace[1]);
+                                        ctx.allocator.free(trace);
                                         issue_count += 1;
 
                                         diag.warn("FFIBodyCheck: malloc result not checked in function '{s}'", .{boundary.function_name});
@@ -701,15 +723,19 @@ pub const FFIBodyCheckPass = struct {
                                                 .{ trace[0], trace[1] },
                                             );
 
-                                            const issue = Issue.init(
+                                            var issue = Issue.init(
                                                 .double_free,
                                                 message,
                                                 boundary.location,
                                                 .high,
                                                 0.9,
                                             );
+                                            issue.owned = true;
 
                                             try ctx.addIssue(&issue);
+                                            ctx.allocator.free(trace[0]);
+                                            ctx.allocator.free(trace[1]);
+                                            ctx.allocator.free(trace);
                                             issue_count += 1;
 
                                             diag.warn("FFIBodyCheck: double free detected in function '{s}'", .{boundary.function_name});
@@ -725,15 +751,19 @@ pub const FFIBodyCheckPass = struct {
                                                 .{ trace[0], trace[1] },
                                             );
 
-                                            const issue = Issue.init(
+                                            var issue = Issue.init(
                                                 .ffi_unsafe_call,
                                                 message,
                                                 boundary.location,
                                                 .medium,
                                                 0.7,
                                             );
+                                            issue.owned = true;
 
                                             try ctx.addIssue(&issue);
+                                            ctx.allocator.free(trace[0]);
+                                            ctx.allocator.free(trace[1]);
+                                            ctx.allocator.free(trace);
                                             issue_count += 1;
 
                                             diag.warn("FFIBodyCheck: free called on non-malloc pointer in function '{s}'", .{boundary.function_name});
@@ -752,18 +782,22 @@ pub const FFIBodyCheckPass = struct {
                                         .{ vuln.message, vuln.trace[0], vuln.trace[1] },
                                     );
 
-                                    const issue = Issue.init(
+                                    var issue = Issue.init(
                                         .ffi_unsafe_call,
                                         message,
                                         boundary.location,
                                         vuln.severity,
                                         vuln.confidence,
                                     );
+                                    issue.owned = true;
 
                                     try ctx.addIssue(&issue);
-                                    issue_count += 1;
-
                                     diag.warn("FFIBodyCheck: {s} in function '{s}'", .{ vuln.message, boundary.function_name });
+                                    // Free VulnerabilityInfo owned strings
+                                    ctx.allocator.free(vuln.message);
+                                    for (vuln.trace) |t| ctx.allocator.free(t);
+                                    ctx.allocator.free(vuln.trace);
+                                    issue_count += 1;
                                 }
 
                                 // Check for format string vulnerabilities
@@ -774,18 +808,22 @@ pub const FFIBodyCheckPass = struct {
                                         .{ vuln.message, vuln.trace[0], vuln.trace[1] },
                                     );
 
-                                    const issue = Issue.init(
+                                    var issue = Issue.init(
                                         vuln.vuln_type,
                                         message,
                                         boundary.location,
                                         vuln.severity,
                                         vuln.confidence,
                                     );
+                                    issue.owned = true;
 
                                     try ctx.addIssue(&issue);
-                                    issue_count += 1;
-
                                     diag.warn("FFIBodyCheck: {s} in function '{s}'", .{ vuln.message, boundary.function_name });
+                                    // Free VulnerabilityInfo owned strings
+                                    ctx.allocator.free(vuln.message);
+                                    for (vuln.trace) |t| ctx.allocator.free(t);
+                                    ctx.allocator.free(vuln.trace);
+                                    issue_count += 1;
                                 }
 
                                 // Check for command injection vulnerabilities
@@ -796,18 +834,22 @@ pub const FFIBodyCheckPass = struct {
                                         .{ vuln.message, vuln.trace[0], vuln.trace[1] },
                                     );
 
-                                    const issue = Issue.init(
+                                    var issue = Issue.init(
                                         vuln.vuln_type,
                                         message,
                                         boundary.location,
                                         vuln.severity,
                                         vuln.confidence,
                                     );
+                                    issue.owned = true;
 
                                     try ctx.addIssue(&issue);
-                                    issue_count += 1;
-
                                     diag.warn("FFIBodyCheck: {s} in function '{s}'", .{ vuln.message, boundary.function_name });
+                                    // Free VulnerabilityInfo owned strings
+                                    ctx.allocator.free(vuln.message);
+                                    for (vuln.trace) |t| ctx.allocator.free(t);
+                                    ctx.allocator.free(vuln.trace);
+                                    issue_count += 1;
                                 }
                             }
                         }
@@ -845,11 +887,39 @@ test "FFIBodyCheckPass - vulnerability descriptions" {
     );
 }
 
-test "FFIBodyCheckPass - format string vulnerability check" {
+test "FFIBodyCheckPass - format string vulnerability detection" {
+    const FactStore = @import("../../../fact/store.zig").FactStore;
+    const QueryEngine = @import("../../../fact/query.zig").QueryEngine;
+    const DataFlowGraph = @import("../../../dataflow/graph.zig").DataFlowGraph;
+
+    var fact_store = FactStore.init(std.testing.allocator);
+    defer fact_store.deinit();
+    var query_engine = QueryEngine.init(&fact_store, std.testing.allocator);
+    var data_flow_graph = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    defer data_flow_graph.deinit();
+
+    // Create minimal IR store for PassContext
+    const ir_mod = @import("../../../ir/ir_store.zig");
+    var ir_store = ir_mod.ModuleIRStore{
+        .allocator = std.testing.allocator,
+        .functions = std.StringHashMap(*ir_mod.FunctionIR).init(std.testing.allocator),
+        .function_list = &[_]*ir_mod.FunctionIR{},
+        .globals = &[_]c.LLVMValueRef{},
+        .global_names = std.StringHashMap(usize).init(std.testing.allocator),
+        .function_count = 0,
+        .total_instruction_count = 0,
+    };
+    defer {
+        ir_store.functions.deinit();
+        ir_store.global_names.deinit();
+    }
+
+    var pass_ctx = try PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph, &ir_store);
+    defer pass_ctx.deinit();
+
     var value_map = std.AutoHashMap(c.LLVMValueRef, ValueInfo).init(std.testing.allocator);
     defer value_map.deinit();
 
-    // Create test analysis context
     const boundary = FFIBoundary{
         .id = 0,
         .kind = undefined,
@@ -863,6 +933,7 @@ test "FFIBodyCheckPass - format string vulnerability check" {
         .allocator = std.testing.allocator,
         .boundary = &boundary,
         .value_map = value_map,
+        .pass_ctx = &pass_ctx,
     };
 
     // Mock format string from parameter
@@ -884,11 +955,39 @@ test "FFIBodyCheckPass - format string vulnerability check" {
     try std.testing.expect(vuln.?.trace.len == 2);
 }
 
-test "FFIBodyCheckPass - command injection vulnerability check" {
+test "FFIBodyCheckPass - command injection requires taint" {
+    const FactStore = @import("../../../fact/store.zig").FactStore;
+    const QueryEngine = @import("../../../fact/query.zig").QueryEngine;
+    const DataFlowGraph = @import("../../../dataflow/graph.zig").DataFlowGraph;
+
+    var fact_store = FactStore.init(std.testing.allocator);
+    defer fact_store.deinit();
+    var query_engine = QueryEngine.init(&fact_store, std.testing.allocator);
+    var data_flow_graph = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    defer data_flow_graph.deinit();
+
+    // Create minimal IR store for PassContext
+    const ir_mod = @import("../../../ir/ir_store.zig");
+    var ir_store = ir_mod.ModuleIRStore{
+        .allocator = std.testing.allocator,
+        .functions = std.StringHashMap(*ir_mod.FunctionIR).init(std.testing.allocator),
+        .function_list = &[_]*ir_mod.FunctionIR{},
+        .globals = &[_]c.LLVMValueRef{},
+        .global_names = std.StringHashMap(usize).init(std.testing.allocator),
+        .function_count = 0,
+        .total_instruction_count = 0,
+    };
+    defer {
+        ir_store.functions.deinit();
+        ir_store.global_names.deinit();
+    }
+
+    var pass_ctx = try PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph, &ir_store);
+    defer pass_ctx.deinit();
+
     var value_map = std.AutoHashMap(c.LLVMValueRef, ValueInfo).init(std.testing.allocator);
     defer value_map.deinit();
 
-    // Create test analysis context
     const boundary = FFIBoundary{
         .id = 1,
         .kind = undefined,
@@ -902,6 +1001,7 @@ test "FFIBodyCheckPass - command injection vulnerability check" {
         .allocator = std.testing.allocator,
         .boundary = &boundary,
         .value_map = value_map,
+        .pass_ctx = &pass_ctx,
     };
 
     // Mock command from parameter
@@ -915,7 +1015,15 @@ test "FFIBodyCheckPass - command injection vulnerability check" {
 
     const args = [_]c.LLVMValueRef{mock_param};
 
-    // Should detect command injection vulnerability
+    // Without taint: should NOT detect (taint gate prevents FP)
+    const no_vuln = try checkCommandInjectionVulnerability("system", &args, &analysis_ctx);
+    try std.testing.expect(no_vuln == null);
+
+    // Mark the value as tainted (simulating user-controlled input)
+    const val_id = try pass_ctx.getValueId(@intFromPtr(mock_param));
+    try pass_ctx.markTainted(val_id, null);
+
+    // With taint: SHOULD detect command injection
     const vuln = try checkCommandInjectionVulnerability("system", &args, &analysis_ctx);
     try std.testing.expect(vuln != null);
     try std.testing.expectEqual(IssueKind.command_injection, vuln.?.vuln_type);

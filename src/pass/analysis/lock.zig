@@ -17,21 +17,19 @@ const QueryEngine = @import("../../fact/query.zig").QueryEngine;
 
 // R8-H6 FIX: Added .c suffix to import LLVM C bindings
 const c = @import("../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../ir/llvm_safe.zig");
 const ValueRef = @import("../../ir/view.zig").ValueRef;
 const FunctionRef = @import("../../ir/view.zig").FunctionRef;
 
-/// Lock operation information
-const LockOperation = struct {
-    lock_id: u32,
-    inst_id: u32,
-    is_acquire: bool,
-};
+// Import extracted type definitions
+const LockOperation = @import("../../types/lock_types.zig").LockOperation;
+const LockGraph = @import("../../types/lock_types.zig").LockGraph;
 
 /// Lock analysis pass
 pub const LockPass = struct {
     pub const name = "lock";
     pub const kind = PassKind.analysis;
-    pub const deps = &[_][]const u8{ "cfg", "dfg", "alias" };
+    pub const deps = &[_][]const u8{};
 
     ctx: *PassContext,
     diag: *DiagnosticWriter,
@@ -53,7 +51,7 @@ pub const LockPass = struct {
             .diag = undefined,
             .store = store,
             .query = QueryEngine.init(store, allocator),
-            .lock_ops = std.ArrayList(LockOperation).init(allocator),
+            .lock_ops = std.ArrayList(LockOperation).initCapacity(allocator, 16) catch @panic("OOM"),
             .lock_id_map = std.AutoHashMap(c.LLVMValueRef, u32).init(allocator),
             .func_id = 0,
             .next_lock_id = 1,
@@ -64,30 +62,32 @@ pub const LockPass = struct {
     pub fn deinit(self: *LockPass, allocator: std.mem.Allocator) void {
         self.query.deinit();
         self.lock_ops.deinit(allocator);
-        self.lock_id_map.deinit(allocator);
+        self.lock_id_map.deinit();
     }
 
     /// Reset internal state for re-analysis
-    fn reset(self: *LockPass, allocator: std.mem.Allocator) void {
-        self.lock_ops.deinit(allocator);
-        self.lock_id_map.deinit(allocator);
-        self.lock_ops = std.ArrayList(LockOperation).init(allocator);
-        self.lock_id_map = std.AutoHashMap(c.LLVMValueRef, u32).init(allocator);
+    fn reset(self: *LockPass) void {
+        self.lock_ops.clearRetainingCapacity();
+        self.lock_id_map.clearRetainingCapacity();
         self.func_id = 0;
         self.next_lock_id = 1;
     }
 
     /// Run the lock analysis pass
     pub fn run(
-        self: *LockPass,
         ctx: *PassContext,
         diag: *DiagnosticWriter,
     ) !void {
+        var fact_store = try FactStore.init(ctx.allocator);
+        defer fact_store.deinit();
+        var self = LockPass.init(ctx.allocator, &fact_store);
+        defer self.deinit(ctx.allocator);
+
         self.ctx = ctx;
         self.diag = diag;
 
         // Reset internal state for re-analysis
-        self.reset(ctx.allocator);
+        self.reset();
 
         const module = ctx.module orelse return;
 
@@ -131,7 +131,7 @@ pub const LockPass = struct {
                         .inst_id = inst_id,
                         .is_acquire = is_acquire,
                     };
-                    try self.lock_ops.append(lock_op);
+                    try self.lock_ops.append(self.ctx.allocator, lock_op);
 
                     // Emit lock fact
                     if (is_acquire) {
@@ -156,8 +156,7 @@ pub const LockPass = struct {
         const opcode = c.LLVMGetInstructionOpcode(inst);
 
         // Lock operations are typically function calls
-        const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
-        if (opcode_enum != .Call) return false;
+        if (!llvm_safe.isCallOrInvoke(opcode)) return false;
 
         // Get called function
         const called_func = c.LLVMGetCalledValue(inst);
@@ -266,15 +265,15 @@ pub const LockPass = struct {
             while (iter.next()) |entry| {
                 entry.value_ptr.deinit(allocator);
             }
-            lock_sequences.deinit(allocator);
+            lock_sequences.deinit();
         }
 
         for (self.lock_ops.items) |lock_op| {
             const gop = try lock_sequences.getOrPut(lock_op.lock_id);
             if (!gop.found_existing) {
-                gop.value_ptr.* = std.ArrayList(LockOperation).init(allocator);
+                gop.value_ptr.* = std.ArrayList(LockOperation).initCapacity(allocator, 4) catch @panic("OOM");
             }
-            try gop.value_ptr.append(lock_op);
+            try gop.value_ptr.append(allocator, lock_op);
         }
 
         // Build graph edges: if lock A is acquired while lock B is held, add edge B -> A
@@ -286,7 +285,7 @@ pub const LockPass = struct {
                 if (!lock_a_op.is_acquire) continue;
 
                 // Find locks held at this point
-                var held_locks = std.ArrayList(u32).init(allocator);
+                var held_locks = std.ArrayList(u32).initCapacity(allocator, 4) catch @panic("OOM");
                 defer held_locks.deinit(allocator);
 
                 for (self.lock_ops.items) |other_op| {
@@ -300,7 +299,7 @@ pub const LockPass = struct {
                             }
                         }
                         if (!released) {
-                            try held_locks.append(other_op.lock_id);
+                            try held_locks.append(allocator, other_op.lock_id);
                         }
                     }
                 }
@@ -320,112 +319,6 @@ pub const LockPass = struct {
     }
 };
 
-/// Lock acquisition graph
-pub const LockGraph = struct {
-    allocator: std.mem.Allocator,
-    adjacency: std.ArrayList(Edge),
-
-    const Edge = struct {
-        from: u32,
-        to: u32,
-    };
-
-    /// Create a new lock graph
-    pub fn init(allocator: std.mem.Allocator) LockGraph {
-        return .{
-            .allocator = allocator,
-            .adjacency = std.ArrayList(Edge).init(allocator),
-        };
-    }
-
-    /// Deinitialize the lock graph
-    pub fn deinit(self: *LockGraph) void {
-        self.adjacency.deinit();
-    }
-
-    /// Add an edge to the graph
-    pub fn addEdge(self: *LockGraph, from: u32, to: u32) !void {
-        try self.adjacency.append(.{ .from = from, .to = to });
-    }
-
-    /// Get neighbors of a node
-    pub fn getNeighbors(self: *const LockGraph, node: u32, allocator: std.mem.Allocator) ![]u32 {
-        var neighbors = std.ArrayList(u32).init(allocator);
-        for (self.adjacency.items) |edge| {
-            if (edge.from == node) {
-                try neighbors.append(edge.to);
-            }
-        }
-        return neighbors.toOwnedSlice();
-    }
-
-    /// Check if the graph has a cycle
-    pub fn hasCycle(self: *LockGraph) !bool {
-        var visited = std.AutoHashMap(u32, bool).init(self.allocator);
-        defer visited.deinit();
-
-        var recursion_stack = std.AutoHashMap(u32, bool).init(self.allocator);
-        defer recursion_stack.deinit();
-
-        // Collect all nodes
-        var nodes = std.ArrayList(u32).init(self.allocator);
-        defer nodes.deinit();
-
-        for (self.adjacency.items) |edge| {
-            if (!visited.contains(edge.from)) {
-                try nodes.append(edge.from);
-                try visited.put(edge.from, true);
-            }
-            if (!visited.contains(edge.to)) {
-                try nodes.append(edge.to);
-                try visited.put(edge.to, true);
-            }
-        }
-
-        // Reset visited for DFS
-        visited.clearRetainingCapacity();
-
-        // DFS for each unvisited node
-        for (nodes.items) |node| {
-            if (!visited.contains(node)) {
-                if (try self.hasCycleDFS(node, &visited, &recursion_stack)) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    /// DFS helper for cycle detection
-    fn hasCycleDFS(
-        self: *LockGraph,
-        node: u32,
-        visited: *std.AutoHashMap(u32, bool),
-        recursion_stack: *std.AutoHashMap(u32, bool),
-    ) !bool {
-        try visited.put(node, true);
-        try recursion_stack.put(node, true);
-
-        const neighbors = try self.getNeighbors(node, self.allocator);
-        defer self.allocator.free(neighbors);
-
-        for (neighbors) |neighbor| {
-            if (!visited.contains(neighbor)) {
-                if (try self.hasCycleDFS(neighbor, visited, recursion_stack)) {
-                    return true;
-                }
-            } else if (recursion_stack.contains(neighbor)) {
-                // Back edge found - cycle exists
-                return true;
-            }
-        }
-
-        _ = recursion_stack.remove(node);
-        return false;
-    }
-};
-
 test "LockPass - init" {
     var store = FactStore.init(std.testing.allocator);
     defer store.deinit();
@@ -438,7 +331,7 @@ test "LockPass - validate as Pass" {
     const ValidPass = Pass(struct {
         pub const name = "test-lock-pass";
         pub const kind = PassKind.analysis;
-        pub const deps = &[_][]const u8{ "cfg", "dfg", "alias" };
+        pub const deps = &[_][]const u8{};
         pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
             _ = ctx;
             _ = diag;
@@ -499,21 +392,21 @@ test "LockPass - lock operation tracking" {
         .inst_id = 10,
         .is_acquire = true,
     };
-    try pass.lock_ops.append(lock_op1);
+    try pass.lock_ops.append(std.testing.allocator, lock_op1);
 
     const lock_op2 = LockOperation{
         .lock_id = 1,
         .inst_id = 20,
         .is_acquire = false,
     };
-    try pass.lock_ops.append(lock_op2);
+    try pass.lock_ops.append(std.testing.allocator, lock_op2);
 
     const lock_op3 = LockOperation{
         .lock_id = 2,
         .inst_id = 15,
         .is_acquire = true,
     };
-    try pass.lock_ops.append(lock_op3);
+    try pass.lock_ops.append(std.testing.allocator, lock_op3);
 
     try std.testing.expectEqual(@as(usize, 3), pass.lock_ops.items.len);
     try std.testing.expectEqual(@as(u32, 1), pass.lock_ops.items[0].lock_id);
@@ -618,14 +511,14 @@ test "LockPass - complex deadlock scenario" {
         .inst_id = 10,
         .is_acquire = true,
     };
-    try pass.lock_ops.append(lock_op1);
+    try pass.lock_ops.append(std.testing.allocator, lock_op1);
 
     const lock_op2 = LockOperation{
         .lock_id = 2,
         .inst_id = 20,
         .is_acquire = true,
     };
-    try pass.lock_ops.append(lock_op2);
+    try pass.lock_ops.append(std.testing.allocator, lock_op2);
 
     // Thread 2 operations
     const lock_op3 = LockOperation{
@@ -633,14 +526,14 @@ test "LockPass - complex deadlock scenario" {
         .inst_id = 30,
         .is_acquire = true,
     };
-    try pass.lock_ops.append(lock_op3);
+    try pass.lock_ops.append(std.testing.allocator, lock_op3);
 
     const lock_op4 = LockOperation{
         .lock_id = 1,
         .inst_id = 40,
         .is_acquire = true,
     };
-    try pass.lock_ops.append(lock_op4);
+    try pass.lock_ops.append(std.testing.allocator, lock_op4);
 
     try std.testing.expectEqual(@as(usize, 4), pass.lock_ops.items.len);
 
@@ -649,75 +542,4 @@ test "LockPass - complex deadlock scenario" {
     try std.testing.expectEqual(@as(u32, 2), pass.lock_ops.items[1].lock_id);
     try std.testing.expectEqual(@as(u32, 2), pass.lock_ops.items[2].lock_id);
     try std.testing.expectEqual(@as(u32, 1), pass.lock_ops.items[3].lock_id);
-}
-
-test "LockGraph - init and deinit" {
-    var graph = LockGraph.init(std.testing.allocator);
-    defer graph.deinit();
-    try std.testing.expectEqual(@as(usize, 0), graph.adjacency.items.len);
-}
-
-test "LockGraph - add edge" {
-    var graph = LockGraph.init(std.testing.allocator);
-    defer graph.deinit();
-
-    try graph.addEdge(1, 2);
-    try std.testing.expectEqual(@as(usize, 1), graph.adjacency.items.len);
-    try std.testing.expectEqual(@as(u32, 1), graph.adjacency.items[0].from);
-    try std.testing.expectEqual(@as(u32, 2), graph.adjacency.items[0].to);
-}
-
-test "LockGraph - get neighbors" {
-    var graph = LockGraph.init(std.testing.allocator);
-    defer graph.deinit();
-
-    try graph.addEdge(1, 2);
-    try graph.addEdge(1, 3);
-    try graph.addEdge(2, 3);
-
-    const neighbors = try graph.getNeighbors(1, std.testing.allocator);
-    defer std.testing.allocator.free(neighbors);
-
-    try std.testing.expectEqual(@as(usize, 2), neighbors.len);
-    try std.testing.expect(neighbors[0] == 2 or neighbors[0] == 3);
-    try std.testing.expect(neighbors[1] == 2 or neighbors[1] == 3);
-}
-
-test "LockGraph - has cycle simple" {
-    var graph = LockGraph.init(std.testing.allocator);
-    defer graph.deinit();
-
-    // Add edges: 1 -> 2 -> 3 -> 1 (cycle)
-    try graph.addEdge(1, 2);
-    try graph.addEdge(2, 3);
-    try graph.addEdge(3, 1);
-
-    try std.testing.expect(try graph.hasCycle());
-}
-
-test "LockGraph - has no cycle" {
-    var graph = LockGraph.init(std.testing.allocator);
-    defer graph.deinit();
-
-    // Add edges: 1 -> 2 -> 3 (no cycle)
-    try graph.addEdge(1, 2);
-    try graph.addEdge(2, 3);
-
-    try std.testing.expect(!try graph.hasCycle());
-}
-
-test "LockGraph - has cycle complex" {
-    var graph = LockGraph.init(std.testing.allocator);
-    defer graph.deinit();
-
-    // Add edges with multiple components
-    // Component 1: 1 -> 2 -> 1 (cycle)
-    try graph.addEdge(1, 2);
-    try graph.addEdge(2, 1);
-
-    // Component 2: 3 -> 4 -> 5 (no cycle)
-    try graph.addEdge(3, 4);
-    try graph.addEdge(4, 5);
-
-    try std.testing.expect(try graph.hasCycle());
 }

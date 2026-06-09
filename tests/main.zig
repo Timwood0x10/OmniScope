@@ -137,9 +137,10 @@ test "IssueType: all variants" {
 test "RiskKind: all variants" {
     // P2-1: Added .static_buffer variant (14 POSIX static buffer functions)
     // v0.1.7: Added .static_buffer_misuse IssueKind for precise classification
-    // Total RiskKind variants: 20
+    // v0.2.0: Added .pure_computation variant (libc pure computation functions)
+    // Total RiskKind variants: 21
     // Total IssueKind variants: 17 (was 16 before .static_buffer_misuse)
-    try std.testing.expectEqual(@as(usize, 20), @typeInfo(registry.RiskKind).@"enum".fields.len);
+    try std.testing.expectEqual(@as(usize, 21), @typeInfo(registry.RiskKind).@"enum".fields.len);
 }
 
 // ========================================
@@ -165,13 +166,14 @@ test "Severity: toString" {
 
 test "SemanticRegistry: layer counts" {
     // Updated: layer1 43→65 (added Python C API + JNI FFI boundary functions)
+    // v0.2.0: Added pure_computation layer (48 libc pure computation functions)
     try std.testing.expectEqual(@as(usize, 65), registry.SemanticRegistry.layer1Count());
     try std.testing.expectEqual(@as(usize, 12), registry.SemanticRegistry.layer2Count());
     try std.testing.expectEqual(@as(usize, 4), registry.SemanticRegistry.layer3Count());
-    try std.testing.expectEqual(@as(usize, 8), registry.SemanticRegistry.layer4Count());
+    try std.testing.expectEqual(@as(usize, 9), registry.SemanticRegistry.layer4Count());
     try std.testing.expectEqual(@as(usize, 29), registry.SemanticRegistry.layer5Count());
     try std.testing.expectEqual(@as(usize, 57), registry.SemanticRegistry.layer6Count());
-    try std.testing.expectEqual(@as(usize, 311), registry.SemanticRegistry.totalCount());
+    try std.testing.expectEqual(@as(usize, 360), registry.SemanticRegistry.totalCount());
 }
 
 test "SemanticRegistry: command_exec functions" {
@@ -301,10 +303,11 @@ test "Regression: layer counts unchanged" {
     try std.testing.expectEqual(@as(usize, 65), registry.SemanticRegistry.layer1Count());
     try std.testing.expectEqual(@as(usize, 12), registry.SemanticRegistry.layer2Count());
     try std.testing.expectEqual(@as(usize, 4), registry.SemanticRegistry.layer3Count());
-    try std.testing.expectEqual(@as(usize, 8), registry.SemanticRegistry.layer4Count());
+    try std.testing.expectEqual(@as(usize, 9), registry.SemanticRegistry.layer4Count());
     try std.testing.expectEqual(@as(usize, 29), registry.SemanticRegistry.layer5Count());
     try std.testing.expectEqual(@as(usize, 57), registry.SemanticRegistry.layer6Count());
-    try std.testing.expectEqual(@as(usize, 311), registry.SemanticRegistry.totalCount());
+    // v0.2.0: Added pure_computation layer (48 libc pure computation functions)
+    try std.testing.expectEqual(@as(usize, 360), registry.SemanticRegistry.totalCount());
 }
 
 test "Regression: critical functions always detected" {
@@ -567,7 +570,7 @@ test "LanguageHint: all variants" {
     try std.testing.expectEqual(@as(u8, 1), @intFromEnum(lifetime.LanguageHint.c));
     try std.testing.expectEqual(@as(u8, 2), @intFromEnum(lifetime.LanguageHint.rust));
     try std.testing.expectEqual(@as(u8, 3), @intFromEnum(lifetime.LanguageHint.zig));
-    try std.testing.expectEqual(@as(u8, 4), @intFromEnum(lifetime.LanguageHint.swift));
+    try std.testing.expectEqual(@as(u8, 4), @intFromEnum(lifetime.LanguageHint.csharp));
     try std.testing.expectEqual(@as(u8, 5), @intFromEnum(lifetime.LanguageHint.cpp));
     try std.testing.expectEqual(@as(u8, 6), @intFromEnum(lifetime.LanguageHint.go));
 }

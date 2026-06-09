@@ -24,28 +24,48 @@ pub const NullCheckGuard = struct {
 
 pub const NullCheckRecognizer = struct {
     allocator: Allocator,
-    guards: std.AutoHashMap(u32, NullCheckGuard),
+    guards: std.ArrayList(NullCheckGuard),
 
     pub fn init(allocator: Allocator) NullCheckRecognizer {
         return .{
             .allocator = allocator,
-            .guards = std.AutoHashMap(u32, NullCheckGuard).init(allocator),
+            .guards = std.ArrayList(NullCheckGuard).initCapacity(allocator, 8) catch @panic("OOM"),
         };
     }
 
     pub fn deinit(self: *NullCheckRecognizer) void {
-        self.guards.deinit();
+        self.guards.deinit(self.allocator);
     }
 
     pub fn recognizeInFunction(self: *NullCheckRecognizer, func: c.LLVMValueRef, id_map: *ValueIdMap) !void {
         if (func == null) return;
+
+        // Pass 1: collect all store instructions (alloca/global → stored value)
+        var stores = std.AutoHashMap(c.LLVMValueRef, c.LLVMValueRef).init(self.allocator);
+        defer stores.deinit();
+
         var bb = c.LLVMGetFirstBasicBlock(func);
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            try self.recognizeInBasicBlock(bb, id_map);
+            var inst = c.LLVMGetFirstInstruction(bb);
+            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                if (c.LLVMGetInstructionOpcode(inst) == c.LLVMStore) {
+                    const val = c.LLVMGetOperand(inst, 0); // value being stored
+                    const ptr = c.LLVMGetOperand(inst, 1); // pointer to store to
+                    if (val != null and ptr != null) {
+                        try stores.put(ptr, val);
+                    }
+                }
+            }
+        }
+
+        // Pass 2: recognize null check guards
+        bb = c.LLVMGetFirstBasicBlock(func);
+        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+            try self.recognizeInBasicBlock(bb, id_map, &stores);
         }
     }
 
-    pub fn recognizeInBasicBlock(self: *NullCheckRecognizer, bb: c.LLVMBasicBlockRef, id_map: *ValueIdMap) !void {
+    pub fn recognizeInBasicBlock(self: *NullCheckRecognizer, bb: c.LLVMBasicBlockRef, id_map: *ValueIdMap, stores: *const std.AutoHashMap(c.LLVMValueRef, c.LLVMValueRef)) !void {
         const terminator = c.LLVMGetBasicBlockTerminator(bb);
         if (terminator == null) return;
 
@@ -88,19 +108,46 @@ pub const NullCheckRecognizer = struct {
 
         const cmp_result_id = try id_map.getOrPutId(@intFromPtr(cond_instr));
 
-        try self.guards.put(cmp_result_id, .{
+        try self.guards.append(self.allocator, .{
             .value_id = ptr_id,
             .cmp_result_id = cmp_result_id,
             .is_not_null_branch = is_ne,
             .branch_bb_id = @intFromPtr(true_bb),
             .other_bb_id = @intFromPtr(false_bb),
         });
+
+        // Handle store/load chain: if ptr_value comes from a Load instruction,
+        // trace back through stores and register a guard for the stored value too.
+        if (c.LLVMGetInstructionOpcode(ptr_value) == c.LLVMLoad) {
+            const loaded_ptr = c.LLVMGetOperand(ptr_value, 0);
+            if (loaded_ptr != null) {
+                // Look up alloca/global in the stores map to find the original stored value
+                if (stores.get(loaded_ptr)) |stored_val| {
+                    const stored_val_id = try id_map.getOrPutId(@intFromPtr(stored_val));
+                    // Only add if not already guarded (avoid duplicate entries)
+                    var already_guarded = false;
+                    for (self.guards.items) |g| {
+                        if (g.value_id == stored_val_id) {
+                            already_guarded = true;
+                            break;
+                        }
+                    }
+                    if (!already_guarded) {
+                        try self.guards.append(self.allocator, .{
+                            .value_id = stored_val_id,
+                            .cmp_result_id = cmp_result_id,
+                            .is_not_null_branch = is_ne,
+                            .branch_bb_id = @intFromPtr(true_bb),
+                            .other_bb_id = @intFromPtr(false_bb),
+                        });
+                    }
+                }
+            }
+        }
     }
 
     pub fn getGuardForBlock(self: *NullCheckRecognizer, bb_id: usize) ?NullCheckGuard {
-        var iter = self.guards.iterator();
-        while (iter.next()) |entry| {
-            const guard = entry.value_ptr.*;
+        for (self.guards.items) |guard| {
             if (guard.branch_bb_id == bb_id or guard.other_bb_id == bb_id) {
                 return guard;
             }
@@ -132,9 +179,7 @@ pub const NullCheckRecognizer = struct {
     /// Unlike isPtrGuardedNonNull (which checks a specific BB), this checks
     /// all guards regardless of their branch target.
     pub fn isPtrGuardedNonNull_byValue(self: *NullCheckRecognizer, value_id: u32) bool {
-        var iter = self.guards.iterator();
-        while (iter.next()) |entry| {
-            const guard = entry.value_ptr.*;
+        for (self.guards.items) |guard| {
             if (guard.value_id == value_id) {
                 return true;
             }
@@ -146,7 +191,7 @@ pub const NullCheckRecognizer = struct {
 test "NullCheckRecognizer - init and deinit" {
     var recognizer = NullCheckRecognizer.init(std.testing.allocator);
     defer recognizer.deinit();
-    try std.testing.expectEqual(@as(usize, 0), recognizer.guards.count());
+    try std.testing.expectEqual(@as(usize, 0), recognizer.guards.items.len);
 }
 
 test "NullCheckRecognizer - empty function analysis" {
@@ -157,7 +202,7 @@ test "NullCheckRecognizer - empty function analysis" {
     defer id_map.deinit();
 
     try recognizer.recognizeInFunction(null, &id_map);
-    try std.testing.expectEqual(@as(usize, 0), recognizer.guards.count());
+    try std.testing.expectEqual(@as(usize, 0), recognizer.guards.items.len);
 }
 
 test "NullCheckGuard - struct fields" {

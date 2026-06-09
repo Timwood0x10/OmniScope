@@ -8,76 +8,22 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const c = @import("../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../ir/llvm_safe.zig");
 const PassContext = @import("../pass.zig").PassContext;
 const PassKind = @import("../pass.zig").PassKind;
 const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const CrossLangEdge = @import("../pass.zig").CrossLangEdge;
-const ptr_types = @import("ptr_lifetime_types.zig");
+const ptr_types = @import("ptr_lifetime/ptr_lifetime_types.zig");
 const language_detector = @import("../../semantics/language_detector.zig");
 const semantics_call_graph = @import("../../semantics/call_graph.zig");
-
-/// Classification of function origin in the call graph.
-/// Used to determine trust boundaries and FFI transitions.
-pub const FunctionKind = enum {
-    /// Function defined within the analyzed module.
-    internal,
-    /// Standard C library function (trusted).
-    libc,
-    /// Function with unknown origin (potential FFI boundary).
-    external_unknown,
-};
-
-/// Trusted libc functions (source: config/languages/c.json).
-/// Dangerous functions (system, exec, popen) are NOT included — see DANGEROUS_FUNCTIONS.
-pub const LIBC_FUNCTIONS = &[_][]const u8{
-    "malloc",
-    "free",
-    "calloc",
-    "realloc",
-    "read",
-    "write",
-    "open",
-    "close",
-    "strlen",
-    "strncpy",
-    "snprintf",
-    "fgets",
-    "getline",
-    "memcpy",
-    "memmove",
-    "memset",
-    "memcmp",
-    "printf",
-    "fprintf",
-    "puts",
-    "fopen",
-    "fclose",
-    "fread",
-    "fwrite",
-};
-
-/// List of dangerous functions that should be flagged as security risks.
-/// These are treated as FFI boundaries and potential sinks.
-pub const DANGEROUS_FUNCTIONS = &[_][]const u8{
-    "system",
-    "exec",
-    "execve",
-    "execvp",
-    "execv",
-    "execl",
-    "execlp",
-    "execle",
-    "fexecve",
-    "posix_spawn",
-    "posix_spawnp",
-    "popen",
-    "gets",
-    "strcpy",
-    "strcat",
-    "sprintf",
-    "scanf",
-    "getenv",
-};
+const cg_types = @import("../../types/call_graph_types.zig");
+pub const FunctionKind = cg_types.FunctionKind;
+pub const Node = cg_types.Node;
+pub const Edge = cg_types.Edge;
+pub const LIBC_FUNCTIONS = cg_types.LIBC_FUNCTIONS;
+pub const DANGEROUS_FUNCTIONS = cg_types.DANGEROUS_FUNCTIONS;
+pub const SOURCE_FUNCTIONS = cg_types.SOURCE_FUNCTIONS;
+pub const SINK_PATTERNS = cg_types.SINK_PATTERNS;
 
 pub fn isLibC(func_name: []const u8) bool {
     for (LIBC_FUNCTIONS) |libc_name| {
@@ -140,62 +86,6 @@ pub fn resolveIndirectCall(
     return try candidates.toOwnedSlice(allocator);
 }
 
-/// Functions that are considered sources of taint.
-/// Taint propagation starts from these functions.
-pub const SOURCE_FUNCTIONS = &[_][]const u8{
-    "read",
-    "recv",
-    "gets",
-    "fgets", // BUG-05/12 FIX: reads from stdin/file → taint source for command injection
-    "scanf",
-    "getenv", // BUG-05 FIX: environment variable → taint source
-    "main", // argv parameters are user-controlled
-};
-
-/// Substring patterns that indicate dangerous sink functions.
-/// Used to detect potential vulnerability paths.
-pub const SINK_PATTERNS = &[_][]const u8{
-    "system", // command execution sink (BUG-05, BUG-12)
-    "exec", // exec* family command execution
-    "popen", // pipe+command execution sink (BUG-12)
-    "sprintf", // format string sink (also buffer overflow risk)
-    "snprintf", // format string sink (safer but still risky with tainted input)
-    "printf", // BUG-07 FIX: format string vulnerability when 1st arg is tainted
-    "strcpy", // buffer overflow / memory corruption sink
-    "strncpy", // buffer overflow sink
-};
-
-/// A node in the call graph representing a function.
-pub const Node = struct {
-    /// Unique identifier for this node.
-    id: u32,
-    /// Name of the function (owned by this node).
-    name: []const u8,
-    /// LLVM value reference to the function.
-    func_ref: c.LLVMValueRef,
-    /// Classification of the function's origin.
-    kind: FunctionKind,
-    /// Whether this function is external to the module.
-    is_external: bool,
-    /// Whether this function is reachable from a taint source.
-    is_tainted: bool,
-    /// ID of the node that tainted this function (null if source).
-    tainted_by: ?u32,
-
-    /// Deinitialize the node and free owned memory
-    fn deinit(self: *Node, allocator: std.mem.Allocator) void {
-        allocator.free(self.name);
-    }
-};
-
-/// An edge in the call graph representing a call relationship.
-pub const Edge = struct {
-    /// ID of the caller function.
-    caller: u32,
-    /// ID of the callee function.
-    callee: u32,
-};
-
 /// Call graph analysis pass.
 ///
 /// Analyzes LLVM IR to build a function call graph, classifies functions,
@@ -230,6 +120,13 @@ pub const CallGraphPass = struct {
 
         // R8.2-b: Extract cross-language call edges for downstream passes.
         try extractCrossLangEdges(ctx, &nodes, &edges, diag);
+
+        // Early exit: no cross-language edges means pure single-language project.
+        // Skip remaining heavy passes (pointer_ownership, taint, ffi_boundary, etc.)
+        if (ctx.cross_lang_edges.items.len == 0) {
+            diag.info("CallGraph: no cross-language edges — single-language project, skipping FFI passes", .{});
+            return;
+        }
 
         // CRITICAL FIX for 0/73 benchmark: Build semantics-level CallGraph for BFS traversal.
         {
@@ -315,7 +212,8 @@ pub const CallGraphPass = struct {
         while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                if (@intFromPtr(c.LLVMIsACallInst(inst)) != 0) {
+                const opcode = c.LLVMGetInstructionOpcode(inst);
+                if (llvm_safe.isCallOrInvoke(opcode)) {
                     const called_val = c.LLVMGetCalledValue(inst);
                     if (@intFromPtr(called_val) == 0) continue;
 
@@ -323,7 +221,11 @@ pub const CallGraphPass = struct {
                     if (@intFromPtr(called_name_ptr) != 0) {
                         const called_name = std.mem.span(called_name_ptr);
                         if (name_to_idx.get(called_name)) |callee_idx| {
-                            try edges.append(allocator, .{ .caller = caller_idx, .callee = callee_idx });
+                            try edges.append(allocator, .{
+                                .caller = caller_idx,
+                                .callee = callee_idx,
+                                .call_inst = @intFromPtr(inst),
+                            });
                         }
                     } else {
                         const module = c.LLVMGetGlobalParent(caller_node.func_ref);
@@ -336,7 +238,11 @@ pub const CallGraphPass = struct {
                             if (@intFromPtr(candidate_name_ptr) == 0) continue;
                             const candidate_name = std.mem.span(candidate_name_ptr);
                             if (name_to_idx.get(candidate_name)) |callee_idx| {
-                                try edges.append(allocator, .{ .caller = caller_idx, .callee = callee_idx });
+                                try edges.append(allocator, .{
+                                    .caller = caller_idx,
+                                    .callee = callee_idx,
+                                    .call_inst = @intFromPtr(inst),
+                                });
                             }
                         }
                     }
@@ -496,14 +402,18 @@ pub const CallGraphPass = struct {
             const caller_node = nodes.items[edge.caller];
             const callee_node = nodes.items[edge.callee];
 
-            // Detect language of caller (has LLVM function ref)
-            const caller_lang = language_detector.identifyLanguage(caller_node.func_ref);
+            // Detect language of caller (has LLVM function ref).
+            // Check override registry first — user-specified language wins over auto-detection.
+            const caller_lang = ctx.lookupFunctionLanguage(caller_node.name) orelse
+                language_detector.identifyLanguage(caller_node.func_ref);
 
-            // Detect language of callee (may be external — use name-based detection)
-            const callee_lang = if (callee_node.is_external)
-                language_detector.identifyCalleeLanguage(callee_node.name)
-            else
-                language_detector.identifyLanguage(callee_node.func_ref);
+            // Detect language of callee (may be external — use name-based detection).
+            // Override registry takes priority for external functions too.
+            const callee_lang = ctx.lookupFunctionLanguage(callee_node.name) orelse
+                if (callee_node.is_external)
+                    language_detector.identifyCalleeLanguage(callee_node.name)
+                else
+                    language_detector.identifyLanguage(callee_node.func_ref);
 
             // Cross-language condition: languages differ OR callee is external unknown
             const is_cross = caller_lang != callee_lang or callee_node.kind == .external_unknown;
@@ -515,13 +425,40 @@ pub const CallGraphPass = struct {
             const callee_name_owned = try ctx.allocator.dupe(u8, callee_node.name);
             errdefer ctx.allocator.free(callee_name_owned);
 
+            // Extract pointer argument indices from the call instruction
+            var ptr_args_list = std.ArrayList(u32).initCapacity(ctx.allocator, 8) catch |e| return e;
+            defer ptr_args_list.deinit(ctx.allocator);
+
+            if (edge.call_inst != 0) {
+                const call_inst: c.LLVMValueRef = @ptrFromInt(edge.call_inst);
+                const opcode = c.LLVMGetInstructionOpcode(call_inst);
+                if (llvm_safe.isCallOrInvoke(opcode)) {
+                    const num_ops = c.LLVMGetNumOperands(call_inst);
+                    // Start from 1 to skip the called function itself (operand 0)
+                    var i: u32 = 1;
+                    while (i < num_ops) : (i += 1) {
+                        const op = c.LLVMGetOperand(call_inst, i);
+                        if (@intFromPtr(op) == 0) continue;
+                        const op_type = c.LLVMTypeOf(op);
+                        if (@intFromPtr(op_type) == 0) continue;
+                        const type_kind = c.LLVMGetTypeKind(op_type);
+                        if (type_kind == c.LLVMPointerTypeKind) {
+                            try ptr_args_list.append(ctx.allocator, i - 1); // Store arg index (0-based)
+                        }
+                    }
+                }
+            }
+
+            const ptr_args_owned = try ptr_args_list.toOwnedSlice(ctx.allocator);
+            errdefer ctx.allocator.free(ptr_args_owned);
+
             const cross_edge = CrossLangEdge{
                 .caller_name = caller_name_owned,
                 .callee_name = callee_name_owned,
                 .caller_lang = caller_lang,
                 .callee_lang = callee_lang,
                 .is_ffi_boundary = is_cross,
-                .ptr_args = &.{},
+                .ptr_args = ptr_args_owned,
             };
             try ctx.addCrossLangEdge(cross_edge);
             cross_count += 1;

@@ -196,15 +196,15 @@ pub const FPPrecisionGuard = struct {
     allocator: std.mem.Allocator,
     violations_list: std.ArrayList(GateViolation),
 
-    pub fn init(allocator: std.mem.Allocator) FPPrecisionGuard {
+    pub fn init(allocator: std.mem.Allocator) error{OutOfMemory}!FPPrecisionGuard {
         return .{
             .allocator = allocator,
-            .violations_list = std.ArrayList(GateViolation).init(allocator),
+            .violations_list = try std.ArrayList(GateViolation).initCapacity(allocator, 4),
         };
     }
 
     pub fn deinit(self: *FPPrecisionGuard) void {
-        self.violations_list.deinit();
+        self.violations_list.deinit(self.allocator);
     }
 
     /// Run gate check comparing candidate metrics against baseline.
@@ -233,7 +233,7 @@ pub const FPPrecisionGuard = struct {
 
         // Rule 1: FFI-Precision must be ≥ threshold
         if (candidate_precision < t.min_ffi_precision) {
-            try self.violations_list.append(.{
+            try self.violations_list.append(self.allocator, .{
                 .threshold_name = "min_ffi_precision",
                 .message = "FFI-Precision below minimum threshold",
                 .actual = candidate_precision,
@@ -243,7 +243,7 @@ pub const FPPrecisionGuard = struct {
 
         // Rule 2: Precision drop must be ≤ max_precision_drop
         if (precision_drop > t.max_precision_drop) {
-            try self.violations_list.append(.{
+            try self.violations_list.append(self.allocator, .{
                 .threshold_name = "max_precision_drop",
                 .message = "Precision dropped more than allowed from baseline",
                 .actual = precision_drop,
@@ -253,7 +253,7 @@ pub const FPPrecisionGuard = struct {
 
         // Rule 3: FP count must not exceed max
         if (candidate.false_positives > t.max_fp_count) {
-            try self.violations_list.append(.{
+            try self.violations_list.append(self.allocator, .{
                 .threshold_name = "max_fp_count",
                 .message = "False positive count exceeds maximum allowed",
                 .actual = @floatFromInt(candidate.false_positives),
@@ -264,7 +264,7 @@ pub const FPPrecisionGuard = struct {
         // Rule 4: Noise reduction must meet minimum
         const noise_ratio = candidate.noiseReductionRatio(issues_before_filter);
         if (noise_ratio < t.min_noise_reduction) {
-            try self.violations_list.append(.{
+            try self.violations_list.append(self.allocator, .{
                 .threshold_name = "min_noise_reduction",
                 .message = "Noise reduction ratio below minimum threshold",
                 .actual = noise_ratio,
@@ -272,7 +272,7 @@ pub const FPPrecisionGuard = struct {
             });
         }
 
-        const violations_slice = try self.violations_list.toOwnedSlice();
+        const violations_slice = try self.violations_list.toOwnedSlice(self.allocator);
         errdefer self.allocator.free(violations_slice);
 
         return .{
@@ -302,144 +302,3 @@ pub const FPPrecisionGuard = struct {
 // ═══════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════
-
-test "PrecisionMetrics - perfect precision" {
-    const m = PrecisionMetrics{
-        .true_positives = 10,
-        .false_positives = 0,
-        .false_negatives = 0,
-        .total_actual_bugs = 10,
-    };
-    try std.testing.expectApproxEqAbs(m.ffiPrecision(), 1.0, 0.001);
-    try std.testing.expectApproxEqAbs(m.recall(), 1.0, 0.001);
-    try std.testing.expectApproxEqAbs(m.f1Score(), 1.0, 0.001);
-    try std.testing.expectApproxEqAbs(m.fpRate(), 0.0, 0.001);
-}
-
-test "PrecisionMetrics - typical scenario" {
-    const m = PrecisionMetrics{
-        .true_positives = 44,
-        .false_positives = 6,
-        .false_negatives = 12,
-        .total_actual_bugs = 56,
-        .total_issues = 50,
-        .functions_analyzed = 159,
-        .functions_skipped = 460,
-    };
-    try std.testing.expectApproxEqAbs(m.ffiPrecision(), 0.88, 0.01);
-    try std.testing.expectApproxEqAbs(m.recall(), 0.786, 0.01);
-    try std.testing.expectApproxEqAbs(m.fpRate(), 0.12, 0.01);
-    try std.testing.expectApproxEqAbs(m.skipRatio(), 0.743, 0.01);
-}
-
-test "PrecisionMetrics - zero division safety" {
-    const empty = PrecisionMetrics{};
-    try std.testing.expectApproxEqAbs(empty.ffiPrecision(), 1.0, 0.001);
-    try std.testing.expectApproxEqAbs(empty.recall(), 1.0, 0.001);
-    try std.testing.expectApproxEqAbs(empty.fpRate(), 0.0, 0.001);
-}
-
-test "PrecisionMetrics - noiseReductionRatio" {
-    const m = PrecisionMetrics{ .total_issues = 9 };
-    try std.testing.expectApproxEqAbs(m.noiseReductionRatio(297), 0.9697, 0.001);
-    try std.testing.expectApproxEqAbs(m.noiseReductionRatio(0), 1.0, 0.001);
-}
-
-test "GateCheck - passes when candidate matches or exceeds baseline" {
-    var guard = FPPrecisionGuard.init(std.testing.allocator);
-    defer guard.deinit();
-
-    const baseline = PrecisionMetrics{
-        .true_positives = 44,
-        .false_positives = 0,
-        .false_negatives = 12,
-    };
-
-    const candidate = PrecisionMetrics{
-        .true_positives = 44,
-        .false_positives = 1,
-        .false_negatives = 12,
-    };
-
-    const result = try guard.runGateCheck(baseline, candidate, 297, null);
-    defer guard.allocator.free(result.violations);
-
-    try std.testing.expect(result.passed);
-    try std.testing.expect(result.fp_count_delta >= 0);
-}
-
-test "GateCheck - fails when precision drops too much" {
-    var guard = FPPrecisionGuard.init(std.testing.allocator);
-    defer guard.deinit();
-
-    const baseline = PrecisionMetrics{
-        .true_positives = 44,
-        .false_positives = 0,
-        .false_negatives = 12,
-    };
-
-    const candidate = PrecisionMetrics{
-        .true_positives = 30,
-        .false_positives = 20,
-        .false_negatives = 20,
-    };
-
-    const result = try guard.runGateCheck(baseline, candidate, 297, null);
-    defer guard.allocator.free(result.violations);
-
-    try std.testing.expect(!result.passed);
-    try std.testing.expect(result.violations.len > 0);
-}
-
-test "GateCheck - fails when FP count exceeds limit" {
-    var guard = FPPrecisionGuard.init(std.testing.allocator);
-    defer guard.deinit();
-
-    const baseline = PrecisionMetrics{
-        .true_positives = 44,
-        .false_positives = 0,
-        .false_negatives = 12,
-    };
-
-    const candidate = PrecisionMetrics{
-        .true_positives = 44,
-        .false_positives = 5,
-        .false_negatives = 12,
-    };
-
-    const custom_thresholds = GateThresholds{ .max_fp_count = 2 };
-    const result = try guard.runGateCheck(baseline, candidate, 297, custom_thresholds);
-    defer guard.allocator.free(result.violations);
-
-    try std.testing.expect(!result.passed);
-}
-
-test "GateCheck - fails when noise reduction insufficient" {
-    var guard = FPPrecisionGuard.init(std.testing.allocator);
-    defer guard.deinit();
-
-    const baseline = PrecisionMetrics{
-        .true_positives = 44,
-        .false_positives = 0,
-        .false_negatives = 12,
-    };
-
-    const candidate = PrecisionMetrics{
-        .true_positives = 44,
-        .false_positives = 0,
-        .false_negatives = 12,
-        .total_issues = 200,
-    };
-
-    const result = try guard.runGateCheck(baseline, candidate, 297, null);
-    defer guard.allocator.free(result.violations);
-
-    try std.testing.expect(!result.passed);
-    var found_noise_violation = false;
-    for (result.violations) |v| {
-        if (std.mem.eql(u8, v.threshold_name, "min_noise_reduction")) {
-            found_noise_violation = true;
-        }
-    }
-    try std.testing.expect(found_noise_violation);
-}

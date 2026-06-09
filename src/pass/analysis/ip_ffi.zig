@@ -14,57 +14,16 @@
 //!   - Full call graph construction
 //!   - Full data flow through complex control flow
 //!
-//! Reference: plan/v0.1.7.md P0-2, plan/rules/skills.md (surgical changes)
+//! Reference: 0.2.0 FFI planning notes, plan/rules/skills.md (surgical changes)
 
 const std = @import("std");
 const c = @import("../../ir/llvm_raw.zig").c;
 const word_boundary = @import("../../utils/word_boundary.zig");
+const ip_ffi = @import("../../types/ip_ffi_types.zig");
+const OwnershipTransfer = ip_ffi.OwnershipTransfer;
+const FFICallSite = ip_ffi.FFICallSite;
 
 const NULL_GUARD_MAX_SCAN: u32 = 15;
-
-/// Ownership transfer direction observed at an FFI call site.
-pub const OwnershipTransfer = enum(u8) {
-    /// No ownership transfer detected
-    none,
-    /// Caller passes owned resource to callee (e.g., free(handle))
-    to_callee,
-    /// Callee returns owned resource to caller (e.g., handle = dlopen())
-    to_caller,
-};
-
-/// A single FFI call site with cross-function context.
-///
-/// Populated by scanning a caller function's instructions for
-/// FFI boundary calls and their surrounding context.
-pub const FFICallSite = struct {
-    /// The caller function containing this call site
-    caller_func: c.LLVMValueRef,
-    /// The call instruction itself
-    call_inst: c.LLVMValueRef,
-    /// Name of the called FFI function
-    callee_name: []const u8,
-    /// Whether the return value is used (stored/passed/compared)
-    result_used: bool,
-    /// Whether caller checks return value against NULL before use
-    has_null_guard: bool,
-    /// Detected ownership transfer direction
-    ownership_transfer: OwnershipTransfer,
-
-    pub fn init(
-        caller_func: c.LLVMValueRef,
-        call_inst: c.LLVMValueRef,
-        callee_name: []const u8,
-    ) FFICallSite {
-        return .{
-            .caller_func = caller_func,
-            .call_inst = call_inst,
-            .callee_name = callee_name,
-            .result_used = false,
-            .has_null_guard = false,
-            .ownership_transfer = .none,
-        };
-    }
-};
 
 /// Analyze all FFI boundary calls within a single function.
 ///
@@ -222,21 +181,34 @@ pub fn check_null_guard_after(call_inst: c.LLVMValueRef) bool {
         if (is_terminator and bb_stack_len < bb_stack.len and total_scanned < max_scan) {
             // For conditional branches, follow both successors
             if (opcode == c.LLVMBr) {
-                const then_bb = c.LLVMGetSuccessor(inst, 0);
-                const else_bb = c.LLVMGetSuccessor(inst, 1);
+                // Check if this is a conditional branch (2 successors) or unconditional (1 successor)
+                const num_successors = c.LLVMGetNumSuccessors(inst);
+                if (num_successors >= 2) {
+                    const then_bb = c.LLVMGetSuccessor(inst, 0);
+                    const else_bb = c.LLVMGetSuccessor(inst, 1);
 
-                // Queue successor blocks that haven't been visited yet
-                if (@intFromPtr(then_bb) != 0 and !isBBVisited(then_bb, &visited_bbs, visited_bbs_len)) {
-                    bb_stack[bb_stack_len] = then_bb;
-                    bb_stack_len += 1;
-                    visited_bbs[visited_bbs_len] = then_bb;
-                    visited_bbs_len += 1;
-                }
-                if (@intFromPtr(else_bb) != 0 and !isBBVisited(else_bb, &visited_bbs, visited_bbs_len)) {
-                    bb_stack[bb_stack_len] = else_bb;
-                    bb_stack_len += 1;
-                    visited_bbs[visited_bbs_len] = else_bb;
-                    visited_bbs_len += 1;
+                    // Queue successor blocks that haven't been visited yet
+                    if (@intFromPtr(then_bb) != 0 and !isBBVisited(then_bb, &visited_bbs, visited_bbs_len)) {
+                        bb_stack[bb_stack_len] = then_bb;
+                        bb_stack_len += 1;
+                        visited_bbs[visited_bbs_len] = then_bb;
+                        visited_bbs_len += 1;
+                    }
+                    if (@intFromPtr(else_bb) != 0 and !isBBVisited(else_bb, &visited_bbs, visited_bbs_len)) {
+                        bb_stack[bb_stack_len] = else_bb;
+                        bb_stack_len += 1;
+                        visited_bbs[visited_bbs_len] = else_bb;
+                        visited_bbs_len += 1;
+                    }
+                } else if (num_successors == 1) {
+                    // Unconditional branch - follow single successor
+                    const succ_bb = c.LLVMGetSuccessor(inst, 0);
+                    if (@intFromPtr(succ_bb) != 0 and !isBBVisited(succ_bb, &visited_bbs, visited_bbs_len)) {
+                        bb_stack[bb_stack_len] = succ_bb;
+                        bb_stack_len += 1;
+                        visited_bbs[visited_bbs_len] = succ_bb;
+                        visited_bbs_len += 1;
+                    }
                 }
             }
             // Don't break here — let the loop try to pop from stack first

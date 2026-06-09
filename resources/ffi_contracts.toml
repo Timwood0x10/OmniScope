@@ -1,0 +1,304 @@
+# FFI Contract Database - Library lifecycle rules
+# Format: Define allocate/release pairs and ownership semantics
+#
+# This database encodes domain knowledge about common C library APIs to help
+# OmniScope distinguish real leaks from false positives and detect
+# incorrect allocate/release pairings.
+#
+# Each [contracts.*] section defines a library's contract rules.
+# Each [[*.pair]] entry defines one allocate/release pair.
+
+version = "1.0"
+
+# ═══════════════════════════════════════════════════
+# OpenSSL / BoringSSL Rules
+# ═══════════════════════════════════════════════════
+
+[contracts.openssl]
+description = "BoringSSL/OpenSSL object lifecycle"
+doc_url = "https://www.openssl.org/docs/manmaster/"
+error_prone = true
+
+[[contracts.openssl.pair]]
+name = "SSL_CTX"
+allocate = ["SSL_CTX_new", "TLS_method", "TLS_server_method", "TLS_client_method"]
+release = ["SSL_CTX_free"]
+ownership = "caller"
+confidence = 0.95
+
+[[contracts.openssl.pair]]
+name = "SSL"
+allocate = ["SSL_new", "SSL_dup"]
+release = ["SSL_free"]
+ownership = "caller"
+confidence = 0.95
+
+[[contracts.openssl.pair]]
+name = "BIO"
+allocate = ["BIO_new", "BIO_new_file", "BIO_new_mem_buf", "BIO_s_mem"]
+release = ["BIO_free", "BIO_free_all"]
+ownership = "caller"
+note = "BIO chains must be freed individually or use BIO_free_all"
+
+[[contracts.openssl.pair]]
+name = "X509"
+allocate = ["PEM_read_bio_X509", "PEM_read_X509", "d2i_X509", "X509_new"]
+release = ["X509_free"]
+ownership = "caller"
+
+[[contracts.openssl.pair]]
+name = "EVP_PKEY"
+allocate = ["PEM_read_bio_PrivateKey", "PEM_read_bio_PUBKEY", "d2i_AutoPrivateKey"]
+release = ["EVP_PKEY_free"]
+ownership = "caller"
+
+[[contracts.openssl.pair]]
+name = "EVP_CIPHER_CTX"
+allocate = ["EVP_CIPHER_CTX_new"]
+release = ["EVP_CIPHER_CTX_free"]
+ownership = "caller"
+note = "Must call EVP_CipherInit_ex before use, EVP_CIPHER_CTX_free after"
+
+[[contracts.openssl.pair]]
+name = "EVP_MD_CTX"
+allocate = ["EVP_MD_CTX_new"]
+release = ["EVP_MD_CTX_free"]
+ownership = "caller"
+
+[[contracts.openssl.pair]]
+name = "RSA"
+allocate = ["RSA_new"]
+release = ["RSA_free"]
+ownership = "caller"
+
+[[contracts.openssl.pair]]
+name = "BIGNUM"
+allocate = ["BN_new"]
+release = ["BN_free"]
+ownership = "caller"
+
+[contracts.openssl.managed]
+types = ["OPENSSL_mem_fn"]
+management = "custom"
+note = "If OPENSSL_memory_alloc appears, may indicate custom allocator issue"
+
+# ═══════════════════════════════════════════════════
+# SQLite Rules
+# ═══════════════════════════════════════════════════
+
+[contracts.sqlite]
+description = "SQLite database handle and statement management"
+error_prone = true
+
+[[contracts.sqlite.pair]]
+name = "database_connection"
+allocate = ["sqlite3_open", "sqlite3_open_v2", "sqlite3_open16"]
+release = ["sqlite3_close", "sqlite3_close_v2"]
+ownership = "caller"
+note = "Must close even if open fails (check return code first)"
+
+[[contracts.sqlite.pair]]
+name = "prepared_statement"
+allocate = ["sqlite3_prepare_v2", "sqlite3_prepare16", "sqlite3_prepare_v3"]
+release = ["sqlite3_finalize"]
+ownership = "caller"
+confidence = 0.98
+note = "Very common leak source! Must finalize after use"
+
+[[contracts.sqlite.pair]]
+name = "blob"
+allocate = ["sqlite3_blob_open", "sqlite3_blob_reopen"]
+release = ["sqlite3_blob_close"]
+ownership = "caller"
+
+[[contracts.sqlite.pair]]
+name = "sqlite_malloc"
+allocate = ["sqlite3_malloc", "sqlite3_realloc"]
+release = ["sqlite3_free"]
+ownership = "caller"
+
+# ═══════════════════════════════════════════════════
+# POSIX System Call Rules
+# ═══════════════════════════════════════════════════
+
+[contracts.posix]
+description = "POSIX file descriptors and memory mappings"
+
+[[contracts.posix.pair]]
+name = "file_descriptor"
+allocate = ["open", "openat", "creat", "socket", "accept", "dup", "fcntl"]
+release = ["close"]
+ownership = "caller"
+resource_type = "fd"
+note = "File descriptor leaks are common and dangerous"
+
+[[contracts.posix.pair]]
+name = "memory_mapping"
+allocate = ["mmap", "mmap64", "shm_open"]
+release = ["munmap", "shm_unlink"]
+ownership = "caller"
+resource_type = "mapping"
+note = "mmap leaks cause virtual memory exhaustion"
+
+[[contracts.posix.pair]]
+name = "pipe"
+allocate = ["pipe", "pipe2"]
+release = ["close"]
+ownership = "caller"
+resource_type = "fd"
+note = "Close both ends of the pipe"
+
+[[contracts.posix.pair]]
+name = "directory_stream"
+allocate = ["opendir"]
+release = ["closedir"]
+ownership = "caller"
+
+# ═══════════════════════════════════════════════════
+# GLib (GNOME/GTK) Rules
+# ═══════════════════════════════════════════════════
+
+[contracts.glib]
+description = "GLib memory management (used by many Linux desktop libs)"
+
+[[contracts.glib.pair]]
+name = "memory"
+allocate = ["g_malloc", "g_malloc0", "g_try_malloc", "g_new", "g_new0"]
+release = ["g_free"]
+ownership = "caller"
+note = "g_free(NULL) is safe (no-op)"
+
+[[contracts.glib.pair]]
+name = "string"
+allocate = ["g_strdup", "g_strndup", "g_build_path", "g_build_filename"]
+release = ["g_free"]
+ownership = "caller"
+
+[[contracts.glib.pair]]
+name = "array"
+allocate = ["g_array_new", "g_ptr_array_new"]
+release = ["g_array_free", "g_ptr_array_free"]
+ownership = "caller"
+note = "Second parameter: free_segment=true to also free elements"
+
+# ═══════════════════════════════════════════════════
+# JavaScriptCore (WebKit) Rules
+# ═══════════════════════════════════════════════════
+
+[contracts.javascriptcore]
+description = "WebKit JavaScriptCore GC-managed objects"
+
+[contracts.javascriptcore.managed]
+types = ["JSObject", "JSString", "JSContextRef", "JSValueRef", "JSPropertyNameArrayRef"]
+management = "gc"
+retain = ["JSValueProtect", "JSValueRetain", "JSObjectSetPrivate"]
+release = ["JSValueUnprotect"]
+note = "Do NOT report JS* allocations as leaks - they're GC managed!"
+
+# ═══════════════════════════════════════════════════
+# libuv (Node.js/Bun I/O) Rules
+# ═══════════════════════════════════════════════════
+
+[contracts.libuv]
+description = "libuv handles (event loop handles)"
+
+[[contracts.libuv.pair]]
+name = "tcp"
+allocate = ["uv_tcp_init", "uv_tcp_init_ex"]
+release = ["uv_close"]
+ownership = "caller"
+callback_required = true
+note = "All handle types use uv_close for release"
+
+[[contracts.libuv.pair]]
+name = "timer"
+allocate = ["uv_timer_init"]
+release = ["uv_close"]
+ownership = "caller"
+note = "Timer must be stopped before closing if repeating"
+
+[[contracts.libuv.pair]]
+name = "async_handle"
+allocate = ["uv_async_init"]
+release = ["uv_close"]
+ownership = "caller"
+
+[[contracts.libuv.pair]]
+name = "signal"
+allocate = ["uv_signal_init"]
+release = ["uv_close"]
+ownership = "caller"
+
+# ═══════════════════════════════════════════════════
+# zlib / compression Rules
+# ═══════════════════════════════════════════════════
+
+[contracts.zlib]
+description = "zlib compression stream"
+
+[[contracts.zlib.pair]]
+name = "stream"
+allocate = ["deflateInit_", "deflateInit2_", "inflateInit_", "inflateInit2_"]
+release = ["deflateEnd", "inflateEnd"]
+ownership = "caller"
+note = "Always call End even if Init fails"
+
+[[contracts.zlib.pair]]
+name = "gz_file"
+allocate = ["gzopen", "gzdopen", "gzbuffer"]
+release = ["gzclose"]
+ownership = "caller"
+
+# ═══════════════════════════════════════════════════
+# Python C API Rules
+# ═══════════════════════════════════════════════════
+
+[contracts.python_capi]
+description = "Python C API reference counting"
+
+[[contracts.python_capi.pair]]
+name = "object"
+allocate = ["PyBytes_FromString", "PyBytes_FromStringAndSize", "PyTuple_New", "PyList_New", "PyDict_New"]
+release = ["Py_DECREF", "Py_XDECREF"]
+ownership = "caller"
+refcounted = true
+
+[[contracts.python_capi.pair]]
+name = "borrowed_reference"
+allocate = ["PyList_GetItem", "PyDict_GetItem", "PyTuple_GetItem", "PyBytes_AsString"]
+ownership = "borrowed"
+note = "Borrowed references - do NOT decrement refcount"
+
+[[contracts.python_capi.pair]]
+name = "global_ref"
+allocate = ["NewGlobalRef"]
+release = ["DeleteGlobalRef"]
+ownership = "caller"
+confidence = 0.99
+
+[[contracts.python_capi.pair]]
+name = "local_ref"
+allocate = ["NewLocalRef", "NewStringUTF", "FindClass", "GetObjectArrayElement"]
+release = ["DeleteLocalRef"]
+ownership = "gc"
+note = "LocalRefs are auto-freed when native method returns, but explicit delete is good practice"
+
+# ═══════════════════════════════════════════════════
+# mimalloc (Bun's underlying allocator)
+# ═══════════════════════════════════════════════════
+
+[contracts.mimalloc]
+description = "mimalloc - Bun's underlying memory allocator"
+
+[[contracts.mimalloc.pair]]
+name = "memory"
+allocate = ["mi_malloc", "mi_zalloc", "mi_realloc", "mi_heap_malloc", "mi_heap_zalloc", "mi_heap_realloc"]
+release = ["mi_free", "mi_heap_free"]
+ownership = "caller"
+
+[[contracts.mimalloc.pair]]
+name = "heap_destroy"
+allocate = ["mi_heap_new"]
+release = ["mi_heap_destroy"]
+ownership = "caller"
+note = "Destroying a heap frees all allocations from it"

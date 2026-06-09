@@ -5,13 +5,13 @@
 //! This module provides universal lifetime tracking for:
 //! - Rust ↔ C
 //! - Zig ↔ C
-//! - Swift ↔ C
+//! - C# ↔ C
 //! - C++ ↔ C ABI
 //! - Any LLVM language ↔ Native boundary
 //!
 //! Architecture:
 //! ```
-//! Language Frontends (Rust/Zig/C/Swift symbol hints)
+//! Language Frontends (Rust/Zig/C/C# symbol hints)
 //!         ↓
 //! Lifetime Engine (owner + state transitions)
 //!         ↓
@@ -53,6 +53,7 @@ pub const BoundaryViolation = boundary.BoundaryViolation;
 pub const BoundaryIssue = boundary.BoundaryIssue;
 pub const BoundaryDirection = boundary.BoundaryDirection;
 pub const AnalyzerStats = boundary.AnalyzerStats;
+pub const formatViolationMessage = boundary.formatViolationMessage;
 
 // Re-export types from engine
 pub const LanguageHint = engine.LanguageHint;

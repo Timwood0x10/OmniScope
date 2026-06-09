@@ -1,8 +1,0 @@
-{"issues": [
-  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
-  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
-  {"kind":"memory_leak","message":"Memory allocated but never freed","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
-  {"kind":"buffer_overflow","message":"Unsafe FFI call to '__strcpy_chk' - Buffer overflow vulnerability (confidence: 65.00%)","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
-  {"kind":"buffer_overflow","message":"Unsafe FFI call to '__strcpy_chk' - Buffer overflow vulnerability (confidence: 65.00%)","severity":"medium","location":{"file":"unknown","line":0,"column":0}},
-  {"kind":"command_injection","message":"Unsafe FFI call to '_system' - Command injection vulnerability (confidence: 65.00%)","severity":"medium","location":{"file":"unknown","line":0,"column":0}}
-]}}

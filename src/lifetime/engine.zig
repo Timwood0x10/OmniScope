@@ -11,14 +11,14 @@
 //! This module provides a universal model for:
 //! - Rust ↔ C
 //! - Zig ↔ C
-//! - Swift ↔ C
+//! - C# ↔ C
 //! - C++ ↔ C ABI
 //! - Julia ↔ C
 //! - Any LLVM language ↔ Native boundary
 //!
 //! Architecture:
 //! ```
-//! Language Frontends (Rust/Zig/C/Swift symbol hints)
+//! Language Frontends (Rust/Zig/C/C# symbol hints)
 //!         ↓
 //! Semantic Mapper (alloc/free/borrow/transfer/reclaim/escape)
 //!         ↓
@@ -28,6 +28,7 @@
 //! ```
 
 const std = @import("std");
+const log = @import("../common/log.zig");
 const CommonTypes = @import("../common/types.zig");
 
 /// Re-export Location for backward compatibility.
@@ -158,12 +159,13 @@ pub const LanguageHint = enum(u8) {
     c,
     rust,
     zig,
-    swift,
+    csharp,
     cpp,
     go,
     julia,
     nim,
     java,
+    python,
 };
 
 /// Issue type detected by the lifetime engine.
@@ -390,7 +392,7 @@ pub const LifetimeEngine = struct {
     /// Add an issue to the issue list.
     fn addIssue(self: *LifetimeEngine, issue: Issue) void {
         self.issues.append(self.allocator, issue) catch |err| {
-            std.log.err("LifetimeEngine: Failed to add issue: {}", .{err});
+            log.err("LifetimeEngine: Failed to add issue: {}", .{err});
         };
     }
 

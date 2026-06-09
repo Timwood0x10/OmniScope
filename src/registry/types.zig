@@ -36,6 +36,11 @@ pub const RiskKind = enum {
     process_mgmt,
     /// P2-1: Functions returning pointers to static buffers (ctime, strerror, etc.)
     static_buffer,
+
+    /// Pure computation functions (strlen, atoi, time, rand, etc.)
+    /// No memory side effects, no writes, no global state changes.
+    /// FFI calls to pure computation functions should not be reported.
+    pure_computation,
 };
 
 /// Severity level for risk assessment (re-exported from common/types.zig).

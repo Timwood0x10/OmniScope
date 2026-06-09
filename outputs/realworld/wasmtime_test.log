@@ -1,8 +1,0 @@
-[INFO] === OmniScope IR Analysis ===
-
-[INFO] File: /Users/scc/code/zigcode/OmniScope/corpus/real_world/other/wasmtime_test.ll
-
-
-[DEBUG] Loading file: /Users/scc/code/zigcode/OmniScope/corpus/real_world/other/wasmtime_test.ll
-Segmentation fault at address 0x8
-???:?:?: 0x1108bfe78 in ??? (libLLVM.dylib)

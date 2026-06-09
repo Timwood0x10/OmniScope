@@ -5,6 +5,86 @@ All notable changes to OmniScope will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-06-09
+
+### Release Focus
+
+OmniScope 0.2.0 consolidates the 0.1.9 stabilization work with a major semantic-analysis and multi-language FFI refactor. Compared with `master`, this release adds semantic resolution, surface classification, resource contracts, language overrides, Symbol Graph export surfaces, broader FFI checks, and a much larger test/corpus matrix.
+
+### Added
+
+- Semantic Resolution Tree, pattern detectors, semantic registry integration, platform/runtime profiles, and Issue Gate based suppression.
+- Symbol Graph support for per-symbol language/ABI classification and FFI export-surface reporting.
+- Resource model with resource families, function summaries, transfer inference, issue candidates, and issue verification.
+- Language adapter and override systems for ambiguous or mixed-language LLVM IR.
+- FFI passes for ABI compatibility, type mismatch, layout mismatch, string safety, unwind boundaries, callback lifecycle, GC safety, JNI leaks, and cross-language dataflow.
+- CLI flags for `--report-surfaces`, language overrides, config loading/generation, surface filtering, leak thresholds, Zig allocator tracking, and per-pass performance stats.
+- IRStore, instruction cache, traversal index, arenas, string interning, prefix trie, Aho-Corasick matcher, and parallel pipeline scaffolding.
+- Inline IR tests, cross-language integration fixtures, golden baseline docs, corpus verification scripts, and CI workflow coverage.
+
+### Changed
+
+- Reorganized analysis code into focused submodules under `src/pass/analysis/{ffi,ptr_lifetime,rust_ffi,noise,resource,taint}`.
+- Moved shared types and utilities into `src/types`, `src/common`, `src/resource`, and `src/semantics/resource`.
+- Reworked pipeline orchestration with centralized pass registration, dependency resolution, pass context implementation, and single-file/multi-file runners.
+- Reorganized documentation into `docs/en`, `docs/zh`, and `docs/touser`, and refreshed README architecture/CLI/pass summaries.
+- Expanded language configuration for C, C++, Rust, Zig, Go, Java, Python, and C#/.NET FFI use cases.
+
+### Fixed
+
+- Version consistency for the 0.2.0 CLI/output path.
+- Multiple analysis memory leaks, double-free risks, OOM handling paths, and silent diagnostic-drop paths found during code review.
+- FFI boundary handling for C/C++ modules and downstream pass dependencies.
+- Rust allocator/drop semantics, C/C++ allocator/deallocator classification, ownership transfer suppression, callback escape handling, and cross-language free false positives.
+- Language detection and override behavior for modules with weak or ambiguous metadata.
+
+### Documentation
+
+- Added and refreshed English docs under `docs/en`, including quick start, API reference, architecture, modules, passes, compiler IR patterns, and language IR specs.
+- Added and refreshed Chinese docs under `docs/zh`, including architecture, modules, passes, report interpretation, compiler IR patterns, baseline spec, and language IR specs.
+- Added `docs/touser/en/ToUser.md` and `docs/touser/zh/ToUser.md` as user-facing context for FFI memory-safety risks.
+- Updated README and README_zh with concise architecture/data-flow Mermaid diagrams, pass responsibilities, CLI reference, and `docs/touser` links.
+
+## [0.1.9] - 2026-05-22
+
+> **Release plan update**: the 0.1.9 work is being rolled into the 0.2.0 release train. See `RELEASE_NOTES.md` for the combined 0.1.9 -> 0.2.0 release notes.
+
+### Bug Fixes & Performance Optimizations
+
+Critical bug fixes and performance improvements with zero precision loss.
+
+#### Bug Fixes
+
+- **P0**: Added `integer_overflow` to `IssueKind` enum with correct CWE-190 mapping (was incorrectly mapped to CWE-120)
+- **P1**: Fixed memory leak in `call_graph.zig` error paths by adding errdefer for `ptr_args_owned`
+- **P2**: Fixed `ffi_detector.zig` opcode comparison to use direct `c.LLVMCall` instead of `@enumFromInt` (3 sites)
+- **L4**: Unified version number to `v0.1.9` across all outputs
+
+#### Performance Optimizations
+
+- **C1**: Merged 8 independent module traversals into 3 in `pointer_ownership.zig` (−67% LLVM API calls)
+- **C3**: Used existing `call_ret_by_ptr` index in `isLeaked`/`isDoubleFreed` (O(N²) → O(1))
+- **C5**: Added 1024-entry cache for `classifyFunction` results (no string allocation)
+- **OPT #1**: Incrementally build `reverse_flow` during `addFlowEdge` (eliminates one full traversal)
+- **OPT #2**: Added cache for `isRustFFIRelevantFunction` results
+
+#### Precision Verification
+
+All optimizations verified with zero precision loss:
+
+| Test | Issues (v0.1.8) | Issues (v0.1.9) | Loss |
+|------|----------------|----------------|------|
+| Rust | 15 | 15 | ✅ None |
+| C++ | 13 | 13 | ✅ None |
+| Zig | 213 | 213 | ✅ None |
+| Go | 8 | 8 | ✅ None |
+| Real-world | 46 | 46 | ✅ None |
+
+#### Technical Debt
+
+- Active bugs: 6 → 0 (all fixed)
+- Deferred optimizations: P1 (ptr_lifetime gate), P2 (pipeline traversal) - design tradeoffs, not bugs
+
 ## [0.1.8] - 2026-05-13
 
 ### S+ Quality Audit
@@ -324,6 +404,7 @@ All `docs/investigation_reports/**/*.md` rewritten with latest 17-file benchmark
 
 | Version | Date | Major Feature | Key Metric |
 |---------|------|---------------|------------|
+| **v0.2.0** | **2026-06-09** | **Semantic analysis + multi-language FFI** | **SRT, Symbol Graph, resource contracts, expanded CLI/tests** |
 | **v0.1.7** | **2026-05-07** | **Exhaustive Bug Fix (Round 7+8)** | **67 bugs**, **343 tests**, **20 Issue Kinds** |
 | **v0.1.6** | **2026-05-04** | **Rust FFI Detection Restoration** | TP **20%**, Coverage **92%**, **191 tests** |
 | v0.1.5 | 2026-04-25 | Zone Classification | Skip rate **60%+** |

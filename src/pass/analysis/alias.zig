@@ -24,12 +24,8 @@ const BasicBlockRef = @import("../../ir/view.zig").BasicBlockRef;
 const FunctionRef = @import("../../ir/view.zig").FunctionRef;
 const ModuleRef = @import("../../ir/view.zig").ModuleRef;
 
-/// Pointer information for alias analysis
-const PointerInfo = struct {
-    value: c.LLVMValueRef,
-    type_id: u32,
-    inst_id: u32,
-};
+const alias_types = @import("../../types/alias_types.zig");
+const AliasInfo = alias_types.AliasInfo;
 
 /// Alias analysis pass
 pub const AliasPass = struct {
@@ -44,7 +40,7 @@ pub const AliasPass = struct {
     // Type cache for TBAA
     type_cache: std.AutoHashMap(c.LLVMTypeRef, u32),
     // Pointer info map
-    ptr_info_map: std.AutoHashMap(c.LLVMValueRef, PointerInfo),
+    ptr_info_map: std.AutoHashMap(c.LLVMValueRef, AliasInfo),
     // Function ID
     func_id: u32,
     // Next type ID counter to avoid pointer truncation
@@ -58,7 +54,7 @@ pub const AliasPass = struct {
             .store = store,
             .query = QueryEngine.init(store, allocator),
             .type_cache = std.AutoHashMap(c.LLVMTypeRef, u32).init(allocator),
-            .ptr_info_map = std.AutoHashMap(c.LLVMValueRef, PointerInfo).init(allocator),
+            .ptr_info_map = std.AutoHashMap(c.LLVMValueRef, AliasInfo).init(allocator),
             .func_id = 0,
             .next_type_id = 0,
         };
@@ -77,16 +73,20 @@ pub const AliasPass = struct {
         self.type_cache.deinit();
         self.ptr_info_map.deinit();
         self.type_cache = std.AutoHashMap(c.LLVMTypeRef, u32).init(allocator);
-        self.ptr_info_map = std.AutoHashMap(c.LLVMValueRef, PointerInfo).init(allocator);
+        self.ptr_info_map = std.AutoHashMap(c.LLVMValueRef, AliasInfo).init(allocator);
         self.func_id = 0;
     }
 
     /// Run the alias analysis pass
     pub fn run(
-        self: *AliasPass,
         ctx: *PassContext,
         diag: *DiagnosticWriter,
     ) !void {
+        var fact_store = try FactStore.init(ctx.allocator);
+        defer fact_store.deinit();
+        var self = AliasPass.init(ctx.allocator, &fact_store);
+        defer self.deinit(ctx.allocator);
+
         self.ctx = ctx;
         self.diag = diag;
 
@@ -105,6 +105,8 @@ pub const AliasPass = struct {
 
                 // Analyze function
                 try self.analyzeFunction(FunctionRef{ .raw = func_ref });
+                // Clear per-function state — cross-function alias pairs are meaningless
+                self.ptr_info_map.clearRetainingCapacity();
             }
             func = c.LLVMGetNextFunction(func);
         }
@@ -124,28 +126,28 @@ pub const AliasPass = struct {
                 const opcode = c.LLVMGetInstructionOpcode(inst);
 
                 // Analyze based on opcode
-                const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
-                switch (opcode_enum) {
-                    .Alloca => {
+                switch (opcode) {
+                    c.LLVMAlloca => {
                         // Alloca creates a new pointer
                         try self.collectPointer(inst);
                     },
-                    .Load => {
+                    c.LLVMLoad => {
                         // Load is a memory operation
                         try self.analyzeMemoryOperation(inst);
                     },
-                    .Store => {
+                    c.LLVMStore => {
                         // Store is a memory operation
                         try self.analyzeMemoryOperation(inst);
                     },
-                    .GetElementPtr => {
+                    c.LLVMGetElementPtr => {
                         // GEP creates a derived pointer
                         try self.collectPointer(inst);
                     },
-                    else => {
-                        // Other instructions may create pointers
+                    c.LLVMCall, c.LLVMInvoke, c.LLVMSelect, c.LLVMPHI => {
+                        // These may produce pointer values
                         try self.collectPointer(inst);
                     },
+                    else => {},
                 }
 
                 // Move to next instruction
@@ -168,7 +170,7 @@ pub const AliasPass = struct {
         const type_kind = c.LLVMGetTypeKind(inst_type);
 
         // Check if this is a pointer type
-        if (type_kind != .Pointer) return;
+        if (type_kind != c.LLVMPointerTypeKind) return;
 
         // Get or create type ID
         const type_id = try self.getTypeId(inst_type);
@@ -177,7 +179,7 @@ pub const AliasPass = struct {
         const inst_id = self.ctx.getValueId(@intFromPtr(inst)) catch return;
 
         // Store pointer info
-        const ptr_info = PointerInfo{
+        const ptr_info = AliasInfo{
             .value = inst,
             .type_id = type_id,
             .inst_id = inst_id,
@@ -193,13 +195,12 @@ pub const AliasPass = struct {
         var ptr_operand: c.LLVMValueRef = undefined;
 
         // Get pointer operand
-        const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
-        switch (opcode_enum) {
-            .Load => {
+        switch (opcode) {
+            c.LLVMLoad => {
                 // Load: first operand is the pointer
                 ptr_operand = c.LLVMGetOperand(inst, 0);
             },
-            .Store => {
+            c.LLVMStore => {
                 // Store: second operand is the pointer
                 ptr_operand = c.LLVMGetOperand(inst, 1);
             },
@@ -223,13 +224,13 @@ pub const AliasPass = struct {
     /// Analyze all collected pointers for aliasing
     fn analyzePointerAliasing(self: *AliasPass, allocator: std.mem.Allocator) !void {
         // Group pointers by type
-        var type_groups = std.AutoHashMap(u32, std.ArrayList(PointerInfo)).init(allocator);
+        var type_groups = std.AutoHashMap(u32, std.ArrayList(AliasInfo)).init(allocator);
         defer {
             var iter = type_groups.iterator();
             while (iter.next()) |entry| {
                 entry.value_ptr.deinit(allocator);
             }
-            type_groups.deinit(allocator);
+            type_groups.deinit();
         }
 
         // Group pointers
@@ -238,19 +239,23 @@ pub const AliasPass = struct {
             const ptr_info = entry.value_ptr.*;
             const gop = try type_groups.getOrPut(ptr_info.type_id);
             if (!gop.found_existing) {
-                gop.value_ptr.* = std.ArrayList(PointerInfo).init(allocator);
+                gop.value_ptr.* = std.ArrayList(AliasInfo).initCapacity(allocator, 8) catch return;
             }
-            try gop.value_ptr.append(ptr_info);
+            try gop.value_ptr.append(allocator, ptr_info);
         }
 
         // For each type group, emit alias facts
+        // Cap group size to prevent O(N²) explosion on large modules
+        const MAX_GROUP_SIZE: usize = 64;
         var group_iter = type_groups.iterator();
         while (group_iter.next()) |entry| {
             const ptrs = entry.value_ptr.items;
+            const limit = @min(ptrs.len, MAX_GROUP_SIZE);
 
-            // Emit alias_may for all pairs
-            for (ptrs, 0..) |ptr1, i| {
-                for (i + 1..ptrs.len) |j| {
+            // Emit alias_may for pairs (capped)
+            for (0..limit) |i| {
+                for (i + 1..limit) |j| {
+                    const ptr1 = ptrs[i];
                     const ptr2 = ptrs[j];
 
                     // May alias (same type)
@@ -474,14 +479,14 @@ test "AliasPass - pointer info map consistency" {
     const ptr2: c.LLVMValueRef = @ptrFromInt(0x2000);
 
     // Add pointer info
-    const ptr_info1 = PointerInfo{
+    const ptr_info1 = AliasInfo{
         .value = ptr1,
         .type_id = 100,
         .inst_id = 1,
     };
     try pass.ptr_info_map.put(ptr1, ptr_info1);
 
-    const ptr_info2 = PointerInfo{
+    const ptr_info2 = AliasInfo{
         .value = ptr2,
         .type_id = 200,
         .inst_id = 2,

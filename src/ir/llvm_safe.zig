@@ -6,8 +6,16 @@
 //! Usage: Always use this layer, never access llvm_raw.c directly.
 
 const std = @import("std");
+const log = @import("../common/log.zig");
 const Allocator = std.mem.Allocator;
 const c = @import("llvm_raw.zig").c;
+
+// C++ bridge for direct LLVM IR parsing (avoids llvm-as external dependency).
+// Declares the remaining C-compatible functions from llvm_cpp_bridge.cpp.
+const cpp = struct {
+    extern fn omni_parse_ir_file(path: [*:0]const u8, ctx: ?*anyopaque, module_out: ?*?*anyopaque, error_out: ?*?[*:0]u8) c_int;
+    extern fn omni_free_string(str: ?*anyopaque) void;
+};
 
 /// Error types for LLVM operations
 pub const Error = error{
@@ -143,70 +151,148 @@ pub const IRLoader = struct {
         const path_c = try self.allocator.dupeZ(u8, path);
         defer self.allocator.free(path_c);
 
-        var mem_buf: c.LLVMMemoryBufferRef = undefined;
-        var err_msg: [*c]u8 = null;
-
-        // Create memory buffer from file
-        if (c.LLVMCreateMemoryBufferWithContentsOfFile(
-            path_c,
-            &mem_buf,
-            &err_msg,
-        ) != 0) {
-            defer if (err_msg != null) c.LLVMDisposeMessage(err_msg);
-            return Error.FileNotFound;
-        }
-
-        // Detect file type
         const is_ll_file = std.mem.endsWith(u8, path, ".ll");
 
         var module_raw: c.LLVMModuleRef = null;
-        var parse_result: c.LLVMBool = 0;
 
         if (is_ll_file) {
             // LLVM 22: LLVMParseIRInContext segfaults on text IR (address 0x8).
             // Root cause: LLVM 22's IR text parser requires target/machine init
             // that the C API context doesn't provide by default.
-            // Workaround: convert .ll → .bc via llvm-as, then load bitcode.
+            // Fix: Use C++ bridge (llvm::parseIRFile) which handles this correctly.
+            // Fallback: llvm-as conversion if C++ bridge is unavailable.
+
+            // Try C++ bridge first (direct llvm::parseIRFile)
+            var cpp_module: ?*anyopaque = null;
+            var cpp_error: ?[*:0]u8 = null;
+            const cpp_result = cpp.omni_parse_ir_file(path_c, self.context.raw, &cpp_module, &cpp_error);
+            defer if (cpp_error) |err| cpp.omni_free_string(@ptrCast(err));
+
+            if (cpp_result == 0 and cpp_module != null) {
+                module_raw = @ptrCast(cpp_module);
+                self.module = .{ .raw = module_raw };
+                return self.module.?;
+            }
+
+            // C++ bridge failed, fall back to llvm-as conversion.
+            // This handles environments where the C++ bridge wasn't compiled
+            // or the LLVM shared library doesn't support it.
+            log.debug("C++ bridge parseIRFile failed ({s}), falling back to llvm-as", .{
+                if (cpp_error) |e| std.mem.sliceTo(e, 0) else "unknown error",
+            });
             const bc_path = try self.allocator.dupeZ(u8, path);
             defer self.allocator.free(bc_path);
             // Replace .ll suffix with .bc
             if (bc_path.len > 3 and std.mem.eql(u8, bc_path[bc_path.len - 3 ..], ".ll")) {
                 @memcpy(bc_path[bc_path.len - 3 ..], ".bc");
             }
+            // Strip LLVM 22+ attributes (target_memN, nocreateundeforpoison) unsupported by llvm-as 21
+            const pp_path = try std.fmt.allocPrint(self.allocator, "{s}.pp", .{bc_path});
+            defer self.allocator.free(pp_path);
+
+            var pp_ok = false;
+            pp_blk: {
+                const file_content = std.fs.cwd().readFileAlloc(self.allocator, path, 100 * 1024 * 1024) catch break :pp_blk;
+                defer self.allocator.free(file_content);
+
+                var cleaned = std.ArrayList(u8){};
+                defer cleaned.deinit(self.allocator);
+
+                var i: usize = 0;
+                while (i < file_content.len) {
+                    if (std.mem.startsWith(u8, file_content[i..], "target_mem")) {
+                        // Skip "target_memN: value" (no preceding comma added yet since it was
+                        // appended as individual chars before we detected the pattern).
+                        // We remove the already-appended ", " by truncating cleaned.
+                        if (cleaned.items.len >= 2 and
+                            cleaned.items[cleaned.items.len - 2] == ',' and
+                            cleaned.items[cleaned.items.len - 1] == ' ')
+                        {
+                            cleaned.shrinkRetainingCapacity(cleaned.items.len - 2);
+                        }
+                        var j = i + 10;
+                        while (j < file_content.len and file_content[j] != ',' and file_content[j] != ')') : (j += 1) {}
+                        i = j;
+                    } else if (std.mem.startsWith(u8, file_content[i..], "nocreateundeforpoison")) {
+                        i += "nocreateundeforpoison".len;
+                    } else {
+                        cleaned.append(self.allocator, file_content[i]) catch break :pp_blk;
+                        i += 1;
+                    }
+                }
+
+                // Fix string constant sizes ([N x i8] c"...") that may have been
+                // corrupted by attribute removal or have mismatched lengths.
+                const fixed = fixStringConstantSizes(self.allocator, cleaned.items) catch break :pp_blk;
+                defer self.allocator.free(fixed);
+
+                std.fs.cwd().writeFile(.{ .sub_path = pp_path, .data = fixed }) catch break :pp_blk;
+                pp_ok = true;
+            }
+
+            const as_path = if (pp_ok) pp_path else path;
+
             const result = std.process.Child.run(.{
                 .allocator = self.allocator,
-                .argv = &[_][]const u8{ "llvm-as", path, "-o", bc_path },
+                .argv = &[_][]const u8{ "llvm-as", "-disable-verify", as_path, "-o", bc_path },
             }) catch return Error.ParseFailed;
             defer self.allocator.free(result.stdout);
             defer self.allocator.free(result.stderr);
             if (result.term.Exited != 0) {
-                std.log.warn("llvm-as conversion failed for {s}: {s}", .{ path, result.stderr });
-                c.LLVMDisposeMemoryBuffer(mem_buf);
+                log.warn("llvm-as conversion failed for {s}: {s}", .{ path, result.stderr });
                 return Error.ParseFailed;
             }
-            // Dispose original .ll buffer, load converted .bc
-            c.LLVMDisposeMemoryBuffer(mem_buf);
+            // Load converted .bc
             return self.loadFile(std.mem.sliceTo(bc_path, 0));
         } else {
-            // Parse LLVM bitcode format (.bc)
+            // .bc path: try C++ bridge (llvm::parseBitcodeFile) first.
+            // The C++ API handles LLVM 22 bitcode correctly.
+            var cpp_module: ?*anyopaque = null;
+            var cpp_error: ?[*:0]u8 = null;
+            const cpp_result = cpp.omni_parse_ir_file(path_c, self.context.raw, &cpp_module, &cpp_error);
+            defer if (cpp_error) |err| cpp.omni_free_string(@ptrCast(err));
+
+            if (cpp_result == 0 and cpp_module != null) {
+                module_raw = @ptrCast(cpp_module);
+                self.module = .{ .raw = module_raw };
+                return self.module.?;
+            }
+
+            // C++ bridge failed, fall back to LLVM C API parseBitcodeInContext.
+            log.debug("C++ bridge parseBitcodeFile failed ({s}), falling back to C API", .{
+                if (cpp_error) |e| std.mem.sliceTo(e, 0) else "unknown error",
+            });
+
+            // .bc path: create memory buffer from file and parse bitcode
+            var mem_buf: c.LLVMMemoryBufferRef = undefined;
+            var err_msg: [*c]u8 = null;
+
+            if (c.LLVMCreateMemoryBufferWithContentsOfFile(
+                path_c,
+                &mem_buf,
+                &err_msg,
+            ) != 0) {
+                defer if (err_msg != null) c.LLVMDisposeMessage(err_msg);
+                return Error.FileNotFound;
+            }
+
+            var parse_result: c.LLVMBool = 0;
             parse_result = c.LLVMParseBitcodeInContext2(
                 self.context.raw,
                 mem_buf,
                 &module_raw,
             );
-        }
 
-        if (parse_result != 0 or module_raw == null) {
-            defer if (err_msg != null) c.LLVMDisposeMessage(err_msg);
+            if (parse_result != 0 or module_raw == null) {
+                defer if (err_msg != null) c.LLVMDisposeMessage(err_msg);
+                c.LLVMDisposeMemoryBuffer(mem_buf);
+                return Error.ParseFailed;
+            }
+
             c.LLVMDisposeMemoryBuffer(mem_buf);
-            return Error.ParseFailed;
+            self.module = .{ .raw = module_raw };
+            return self.module.?;
         }
-
-        self.module = .{ .raw = module_raw };
-        // L7 FIX: Dispose memory buffer on success path to prevent leak.
-        // Previous code only disposed on error path (line 184), leaking on success.
-        c.LLVMDisposeMemoryBuffer(mem_buf);
-        return self.module.?;
     }
 
     /// Get the module
@@ -230,6 +316,103 @@ pub const IRLoader = struct {
 };
 
 // ============================================================================
+// Preprocessing: Fix string constant sizes after attribute removal
+// ============================================================================
+
+/// After preprocessing removes unsupported LLVM attributes, fix string constant
+/// array sizes ([N x i8] c"...") that may be mismatched. LLVM IR string constants
+/// declare their byte count in the type; if the declared size N does not match the
+/// actual byte length of the c"..." content, llvm-as rejects the IR.
+///
+/// This handles cases where:
+///   1. The original .ll file has a size mismatch (e.g. generated by a different
+///      LLVM version with different escape-sequence accounting).
+///   2. Attribute removal shifted content around a string constant (unlikely but
+///      possible given the byte-by-byte scanning approach).
+fn fixStringConstantSizes(allocator: Allocator, input: []const u8) ![]u8 {
+    var result = std.ArrayList(u8){};
+    errdefer result.deinit(allocator);
+
+    var i: usize = 0;
+    while (i < input.len) {
+        // Look for pattern: [digits x i8]
+        if (input[i] == '[') {
+            const bracket_close = std.mem.indexOfScalarPos(u8, input, i + 1, ']') orelse {
+                try result.append(allocator, input[i]);
+                i += 1;
+                continue;
+            };
+            const inner = input[i + 1 .. bracket_close];
+            // Parse "digits x i8" with optional spaces around digits
+            const space_pos = std.mem.indexOfScalar(u8, inner, ' ') orelse {
+                try result.append(allocator, input[i]);
+                i += 1;
+                continue;
+            };
+            const num_str = inner[0..space_pos];
+            const declared_num = std.fmt.parseInt(usize, num_str, 10) catch {
+                try result.append(allocator, input[i]);
+                i += 1;
+                continue;
+            };
+            // Verify the rest is " x i8"
+            if (!std.mem.eql(u8, inner[space_pos..], " x i8")) {
+                try result.append(allocator, input[i]);
+                i += 1;
+                continue;
+            }
+            // Skip whitespace after ]
+            var after = bracket_close + 1;
+            while (after < input.len and (input[after] == ' ' or input[after] == '\t')) : (after += 1) {}
+            // Check for c" (constant string)
+            if (after + 1 < input.len and input[after] == 'c' and input[after + 1] == '"') {
+                // Count actual bytes in the c"..." string
+                var str_pos = after + 2;
+                var actual_bytes: usize = 0;
+                while (str_pos < input.len) : (str_pos += 1) {
+                    const ch = input[str_pos];
+                    if (ch == '\\') {
+                        // LLVM IR escape sequences: \xx (hex), \\ (backslash)
+                        if (str_pos + 1 < input.len) {
+                            const next = input[str_pos + 1];
+                            if (std.ascii.isHex(next) and
+                                str_pos + 2 < input.len and
+                                std.ascii.isHex(input[str_pos + 2]))
+                            {
+                                str_pos += 2; // Skip the two hex digits (\xx → 1 byte)
+                            } else if (next == '\\' or next == '"') {
+                                str_pos += 1; // Skip the escaped char
+                            }
+                            actual_bytes += 1;
+                        }
+                    } else if (ch == '"') {
+                        // End of string constant
+                        break;
+                    } else {
+                        actual_bytes += 1;
+                    }
+                }
+                if (declared_num != actual_bytes) {
+                    // Replace [declared_num x i8] with [actual_bytes x i8]
+                    try result.append(allocator, '[');
+                    const num_str2 = try std.fmt.allocPrint(allocator, "{}", .{actual_bytes});
+                    defer allocator.free(num_str2);
+                    try result.appendSlice(allocator, num_str2);
+                    try result.appendSlice(allocator, " x i8]");
+                    // Copy the rest: from after the bracket through the closing quote
+                    try result.appendSlice(allocator, input[bracket_close + 1 .. str_pos + 1]);
+                    i = str_pos + 1;
+                    continue;
+                }
+            }
+        }
+        try result.append(allocator, input[i]);
+        i += 1;
+    }
+    return try result.toOwnedSlice(allocator);
+}
+
+// ============================================================================
 // Helper Functions for LLVM Instruction Patterns
 // ============================================================================
 
@@ -244,11 +427,24 @@ pub fn getCallInstArgCount(inst: c.LLVMValueRef) u32 {
     return if (num_ops > 0) num_ops - 1 else 0;
 }
 
+/// Check if an instruction opcode represents a call or invoke instruction.
+/// This is the standardized way to check for both call and invoke opcodes
+/// across all analysis passes to avoid missing FFI calls in exception paths.
+///
+/// LLVM IR has two call instructions:
+///   - LLVMCall: Normal function call
+///   - LLVMInvoke: Call that may throw an exception (C++/Rust/Swift)
+///
+/// Both must be checked for complete FFI vulnerability detection.
+pub fn isCallOrInvoke(opcode: c_uint) bool {
+    return (opcode == c.LLVMCall) or (opcode == c.LLVMInvoke);
+}
+
 /// Check if an instruction is a CallInst and return its argument count.
 /// Returns null if not a CallInst.
 pub fn getCallInstArgCountSafe(inst: c.LLVMValueRef) ?u32 {
     const opcode = c.LLVMGetInstructionOpcode(inst);
-    if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) return null;
+    if (!isCallOrInvoke(opcode)) return null;
     return getCallInstArgCount(inst);
 }
 
@@ -271,4 +467,25 @@ pub fn iterateCallArgs(
         if (@intFromPtr(arg) == 0) continue;
         try callback(arg, i);
     }
+}
+
+/// Guard against stale LLVMValueRef from LLVMGetNextInstruction.
+///
+/// On certain IR modules (C++ exception handling / landing pads),
+/// LLVMGetNextInstruction may return a pointer that is non-null but
+/// points to freed or invalid memory. Calling LLVMGetInstructionOpcode
+/// on such a pointer triggers a segfault (General protection exception).
+///
+/// LLVMIsAInstruction returns null for invalid refs, making it a safe
+/// pre-check before any LLVM C API call that dereferences the instruction.
+///
+/// Usage in BB instruction traversal:
+///   var inst = c.LLVMGetFirstInstruction(bb);
+///   while (@intFromPtr(inst) != 0) {
+///       if (!llvm_safe.isValidInstruction(inst)) break;
+///       // safe to use inst
+///       inst = c.LLVMGetNextInstruction(inst);
+///   }
+pub fn isValidInstruction(inst: c.LLVMValueRef) bool {
+    return c.LLVMIsAInstruction(inst) != null;
 }

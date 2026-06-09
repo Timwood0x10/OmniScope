@@ -10,6 +10,7 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../../ir/llvm_safe.zig");
 
 const PassContext = @import("../../pass.zig").PassContext;
 const PassKind = @import("../../pass.zig").PassKind;
@@ -17,20 +18,12 @@ const DiagnosticWriter = @import("../../pass.zig").DiagnosticWriter;
 
 const Location = @import("../../../diag/issue.zig").Location;
 const Issue = @import("../../../diag/issue.zig").Issue;
-const IssueKind = @import("../../../diag/issue.zig").IssueKind;
 const Severity = @import("../../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
+const IssueCandidate = @import("../resource/issue_candidate_builder.zig").IssueCandidate;
 
-/// Memory allocation functions that return nullable pointers
-const ALLOC_FUNCTIONS = &[_][]const u8{
-    "malloc",
-    "calloc",
-    "realloc",
-    "aligned_alloc",
-    "valloc",
-    "pvalloc",
-    "memalign",
-};
+// Delegate allocation function detection to the unified function catalog
+const ptr_types = @import("../ptr_lifetime/ptr_lifetime_types.zig");
 
 /// Malloc null check detection pass
 ///
@@ -110,16 +103,16 @@ pub const MallocCheckPass = struct {
         alloc_results: *std.AutoHashMap(c.LLVMValueRef, AllocInfo),
     ) !void {
         const opcode = c.LLVMGetInstructionOpcode(inst);
-        const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
 
         // Check for allocation call
-        if (opcode_enum == .Call) {
+        if (llvm_safe.isCallOrInvoke(opcode)) {
             const called = c.LLVMGetCalledValue(inst);
             if (@intFromPtr(called) != 0) {
                 const name_ptr = c.LLVMGetValueName(called);
                 if (@intFromPtr(name_ptr) != 0) {
                     const func_name = std.mem.span(name_ptr);
-                    if (isAllocFunction(func_name)) {
+                    const is_alloc = isAllocFunction(func_name);
+                    if (is_alloc) {
                         // Record this allocation result
                         try alloc_results.put(inst, .{
                             .alloc_inst = inst,
@@ -165,10 +158,13 @@ pub const MallocCheckPass = struct {
         diag: *DiagnosticWriter,
     ) !bool {
         const opcode = c.LLVMGetInstructionOpcode(inst);
-        const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
 
-        // Skip the allocation call itself and null checks
-        if (opcode_enum == .Call or opcode_enum == .ICmp) {
+        // Skip the allocation call itself, null checks, and ret instructions.
+        // Reason: ret instruction = factory pattern (return malloc result to caller).
+        // Caller is responsible for null checking, not this function.
+        // Example: XXH32_createState() { return XXH_malloc(sizeof(...)); }
+        // Reporting this as HIGH creates massive FPs on C API factory functions.
+        if (llvm_safe.isCallOrInvoke(opcode) or opcode == c.LLVMICmp or opcode == c.LLVMRet) {
             return false;
         }
 
@@ -177,7 +173,6 @@ pub const MallocCheckPass = struct {
         var i: u32 = 0;
         while (i < num_ops) : (i += 1) {
             const operand = c.LLVMGetOperand(inst, i);
-
             if (alloc_results.get(operand)) |info| {
                 if (!info.has_null_check) {
                     // Found unchecked use!
@@ -192,12 +187,7 @@ pub const MallocCheckPass = struct {
 
     /// Check if function is a memory allocation function
     fn isAllocFunction(func_name: []const u8) bool {
-        for (ALLOC_FUNCTIONS) |alloc_func| {
-            if (std.mem.eql(u8, func_name, alloc_func)) {
-                return true;
-            }
-        }
-        return false;
+        return ptr_types.isHeapAllocFunction(func_name);
     }
 
     /// Report unchecked malloc use
@@ -228,16 +218,30 @@ pub const MallocCheckPass = struct {
             .{ alloc_func_name, 0.85 * 100.0 },
         );
 
-        const issue = Issue.initWithTrace(
+        const severity: Severity = .high;
+        const confidence: f32 = 0.85;
+
+        // P20: Structured candidate for malloc unchecked
+        var cand = IssueCandidate.init(ctx.allocator, .leak, confidence);
+        cand.func_name = caller_name;
+        cand.alloc_ptr = @as(u64, @intFromPtr(use_inst));
+        cand.inst_addr = @as(u64, @intFromPtr(use_inst));
+        cand.is_on_ffi_path = true;
+        cand.addEvidence("malloc() result used without null check") catch {};
+        cand.addEvidenceFmt("Function: {s}", .{caller_name}) catch {};
+
+        var issue = Issue.initWithTrace(
             .malloc_unchecked,
-            message,
+            cand.reason orelse message,
             location,
-            .high,
-            0.85,
+            severity,
+            cand.raw_score,
             trace,
         );
+        errdefer issue.deinit(ctx.allocator);
 
         try ctx.addIssue(&issue);
+        defer cand.deinit();
 
         diag.warn("Unchecked {s} result in function: {s}", .{ alloc_func_name, caller_name });
     }

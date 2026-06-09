@@ -4,6 +4,9 @@
 
 const std = @import("std");
 const c = @import("../../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../../ir/llvm_safe.zig");
+const ir_store_mod = @import("../../../ir/ir_store.zig");
+const FunctionIR = ir_store_mod.FunctionIR;
 
 const PassContext = @import("../../pass.zig").PassContext;
 const PassKind = @import("../../pass.zig").PassKind;
@@ -14,6 +17,7 @@ const Issue = @import("../../../diag/issue.zig").Issue;
 const IssueKind = @import("../../../diag/issue.zig").IssueKind;
 const Severity = @import("../../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
+const rust_whitelist = @import("../../../whitelists/rust_internal.zig");
 
 /// Return value check pass
 pub const ReturnCheckPass = struct {
@@ -59,23 +63,20 @@ pub const ReturnCheckPass = struct {
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
 
-        const noise_filter = @import("../../../semantics/noise_filter.zig");
-
-        var func = c.LLVMGetFirstFunction(ctx.module.?.raw);
-        if (@intFromPtr(func) == 0) return;
+        const ir_store = ctx.ir_store;
+        if (ir_store.function_list.len == 0) return;
 
         var issue_count: usize = 0;
-        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
+        for (ir_store.function_list) |fir| {
             // Skip safe zone / runtime internal functions
-            const func_name_raw = c.LLVMGetValueName(func);
-            const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "";
+            const func_name = fir.name;
             if (func_name.len > 0) {
-                const classification = noise_filter.classifyFunctionFull(func_name, null, null, null);
+                const classification = ctx.classifyFunctionSurface(func_name, null);
                 if (!classification.origin.shouldReportByDefault()) continue;
             }
 
             // Function-level error isolation
-            const count = analyzeFunction(ctx, func, diag) catch |err| {
+            const count = analyzeFunction(ctx, fir, diag) catch |err| {
                 const err_name = if (func_name.len > 0) func_name else "unknown";
                 diag.warn("ReturnCheck: skipped function due to error: {} ({s})", .{ err, err_name });
                 ctx.recordDegradedFunction();
@@ -87,16 +88,14 @@ pub const ReturnCheckPass = struct {
         diag.info("ReturnCheck: Analyzed functions, found {} unchecked return values", .{issue_count});
     }
 
-    fn analyzeFunction(ctx: *PassContext, func: c.LLVMValueRef, diag: *DiagnosticWriter) !usize {
+    fn analyzeFunction(ctx: *PassContext, fir: *const FunctionIR, diag: *DiagnosticWriter) !usize {
         var issue_count: usize = 0;
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                if (@intFromPtr(c.LLVMIsACallInst(inst)) != 0) {
-                    if (try checkCallForUncheck(ctx, inst, func, diag)) {
-                        issue_count += 1;
-                    }
+        const func = fir.func;
+        for (fir.instructions) |inst| {
+            const opcode = c.LLVMGetInstructionOpcode(inst);
+            if (llvm_safe.isCallOrInvoke(opcode)) {
+                if (try checkCallForUncheck(ctx, inst, func, diag)) {
+                    issue_count += 1;
                 }
             }
         }
@@ -123,6 +122,11 @@ pub const ReturnCheckPass = struct {
             called_name;
 
         if (!isDangerousFunction(clean_name)) {
+            return false;
+        }
+
+        // ── Skip Rust internal panic/unwind functions (eliminate ~13 FP) ──
+        if (rust_whitelist.RustInternalWhitelist.canIgnoreReturnValue(clean_name)) {
             return false;
         }
 

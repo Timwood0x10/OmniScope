@@ -9,6 +9,8 @@
 
 const std = @import("std");
 
+const log = @import("../common/log.zig");
+
 const Allocator = std.mem.Allocator;
 
 const FactStore = @import("../fact/store.zig").FactStore;
@@ -247,6 +249,70 @@ pub const DataFlowGraph = struct {
     }
 
     /// Create FFI boundaries from FFIMatcher matches
+    /// Safe FFI function whitelist - these are well-known safe functions
+    /// that should not trigger ffi_unsafe_call warnings
+    const SAFE_FFI_PATTERNS = [_][]const u8{
+        // Standard I/O functions
+        "printf", "fprintf", "sprintf", "snprintf",
+        "scanf",  "fscanf",  "sscanf",
+        // String operations
+         "strlen",
+        "strcpy", "strcat",  "strncpy", "strncat",
+        "strcmp", "strncmp", "strstr",  "strchr",
+        "memcpy", "memmove", "memcmp",  "memset",
+        // Memory management (basic)
+        "malloc", "calloc",  "realloc", "free",
+        "alloca", "strdup",  "strndup",
+        // Math functions
+        "sin",
+        "cos",    "tan",     "sqrt",    "pow",
+        "abs",    "rand",    "srand",
+        // Time functions
+          "time",
+        "clock",  "sleep",
+    };
+
+    /// Internal implementation prefixes - these are internal functions
+    /// that should not be reported as FFI boundary issues
+    const INTERNAL_PREFIXES = [_][]const u8{
+        "__rust_", // Rust internal functions
+        "sqlite3Mem", // SQLite internal memory management
+        "uv__", // libuv internal functions
+        "std::", // C++ standard library internal
+        "_ZN", // C++ mangled names prefix
+    };
+
+    /// Checks if an FFI function name is considered dangerous and should be reported.
+    /// Implements three-layer defense:
+    /// Layer 1: Safe function whitelist (exact match)
+    /// Layer 2: Internal implementation prefix check
+    /// Layer 3: Default to potentially dangerous
+    ///
+    /// Parameters:
+    ///   - func_name: The FFI function name to check
+    ///
+    /// Returns:
+    ///   - true if the function should be included in FFI boundary analysis
+    ///   - false if the function is safe and should be filtered out
+    fn isDangerousFFIFunction(func_name: []const u8) bool {
+        // Layer 1: Check safe whitelist (exact match)
+        for (SAFE_FFI_PATTERNS) |pattern| {
+            if (std.mem.eql(u8, func_name, pattern)) {
+                return false; // Safe function, skip
+            }
+        }
+
+        // Layer 2: Check internal implementation prefixes
+        for (INTERNAL_PREFIXES) |prefix| {
+            if (std.mem.startsWith(u8, func_name, prefix)) {
+                return false; // Internal implementation, skip
+            }
+        }
+
+        // Not in whitelist or internal list - consider it potentially dangerous
+        return true;
+    }
+
     ///
     /// This method iterates through all FFI matches and creates
     /// corresponding FFIBoundary entries in the graph.
@@ -262,8 +328,21 @@ pub const DataFlowGraph = struct {
         // Generate IDs starting from the current boundary count + 1
         var id: u32 = @intCast(self.ffi_boundaries.items.len + 1);
 
+        // Statistics for filtering effectiveness
+        const total_matches = matches.len;
+        var filtered_count: usize = 0;
+        var retained_count: usize = 0;
+
         for (matches) |match| {
             if (!match.isValid()) continue;
+
+            // ⭐ NEW: Pre-filter non-dangerous functions (三层防御)
+            if (!isDangerousFFIFunction(match.name)) {
+                filtered_count += 1;
+                continue; // Skip this safe/internal function entirely
+            }
+
+            retained_count += 1;
 
             // Infer languages from function names
             const declare_name = match.declare_func.?.name;
@@ -289,6 +368,15 @@ pub const DataFlowGraph = struct {
 
             try self.ffi_boundaries.append(self.allocator, boundary);
             id += 1;
+        }
+
+        // Log filtering statistics (only if filtering occurred)
+        if (filtered_count > 0) {
+            log.info("FFI-FILTER: Total={}, Filtered={} safe/internal functions, Retained={} potentially dangerous", .{
+                total_matches,
+                filtered_count,
+                retained_count,
+            });
         }
     }
 
@@ -455,20 +543,38 @@ pub const DataFlowGraph = struct {
         }
 
         if (count == 0) {
-            return &[_]Issue{};
+            // Allocate a heap-backed empty slice so the caller can uniformly
+            // free the returned memory without special-casing the empty path.
+            // Returning a pointer to a function-local zero-length array literal
+            // would be a dangling reference once the stack frame unwinds.
+            return try self.allocator.alloc(Issue, 0);
         }
 
         const result = try self.allocator.alloc(Issue, count);
+        // FIX: Clean up partially allocated entries on OOM
+        var filled: usize = 0;
+        errdefer {
+            // Free already-copied strings and the result array itself on error
+            for (result[0..filled]) |*item| {
+                if (item.owned) self.allocator.free(item.message);
+                if (item.function_owned) self.allocator.free(item.location.func);
+            }
+            self.allocator.free(result);
+        }
 
         var index: usize = 0;
         for (self.issues.items) |issue| {
             if (issue.severity == severity) {
                 const message_copy = try self.allocator.dupe(u8, issue.message);
                 // DC-C9 FIX: Deep copy location.func to prevent dangling pointer
+                errdefer self.allocator.free(message_copy);
                 const func_copy = if (issue.location.func.len > 0)
                     try self.allocator.dupe(u8, issue.location.func)
                 else
                     issue.location.func;
+                errdefer {
+                    if (func_copy.len > 0) self.allocator.free(func_copy);
+                }
 
                 result[index] = .{
                     .kind = issue.kind,
@@ -487,7 +593,9 @@ pub const DataFlowGraph = struct {
                     .trace = null,
                     .owned = true,
                     .function_owned = (func_copy.len > 0),
+                    .classification = issue.classification,
                 };
+                filled = index + 1;
                 index += 1;
             }
         }
@@ -799,4 +907,77 @@ test "DataFlowGraph - clear" {
 
     try std.testing.expectEqual(@as(usize, 0), dfg.nodes.count());
     try std.testing.expectEqual(@as(usize, 0), dfg.edges.items.len);
+}
+
+// Deep-free a slice produced by getIssuesBySeverity.
+// Mirrors the ownership contract documented on the function: every entry
+// owns its message and (optionally) its function name, plus the slice itself.
+fn freeIssuesSlice(allocator: Allocator, slice: []Issue) void {
+    for (slice) |*item| {
+        if (item.owned and item.message.len > 0) allocator.free(item.message);
+        if (item.function_owned and item.location.func.len > 0) allocator.free(item.location.func);
+    }
+    allocator.free(slice);
+}
+
+test "DataFlowGraph - getIssuesBySeverity returns heap-backed empty slice when no matches" {
+    // Boundary: a query that returns zero matches must still hand back a slice
+    // that is safe to free. Returning a stack-local literal would dangle.
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    defer fact_store.deinit();
+
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
+
+    var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    defer dfg.deinit();
+
+    const result = try dfg.getIssuesBySeverity(.critical);
+    defer freeIssuesSlice(std.testing.allocator, result);
+
+    try std.testing.expectEqual(@as(usize, 0), result.len);
+}
+
+test "DataFlowGraph - getIssuesBySeverity returns empty slice when severities do not match" {
+    // Boundary: graph has issues but none at the queried severity.
+    // Same heap-backed empty slice contract as the prior test.
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    defer fact_store.deinit();
+
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
+
+    var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    defer dfg.deinit();
+
+    const location = Location.init("only_high");
+    try dfg.addIssue(Issue.init(.ffi_unsafe_call, "only-high entry", location, .high, 0.9));
+
+    const result = try dfg.getIssuesBySeverity(.critical);
+    defer freeIssuesSlice(std.testing.allocator, result);
+
+    try std.testing.expectEqual(@as(usize, 0), result.len);
+}
+
+test "DataFlowGraph - getIssuesBySeverity filters and deep-copies matches" {
+    // Happy path: mixed severities, verify only matching issues come back
+    // and that the deep-copied strings outlive any source mutation.
+    var fact_store = try @import("../fact/store.zig").FactStore.init(std.testing.allocator);
+    defer fact_store.deinit();
+
+    var query_engine = @import("../fact/query.zig").QueryEngine.init(&fact_store, std.testing.allocator);
+
+    var dfg = try DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
+    defer dfg.deinit();
+
+    try dfg.addIssue(Issue.init(.ffi_unsafe_call, "h-1", Location.init("f_a"), .high, 0.9));
+    try dfg.addIssue(Issue.init(.memory_leak, "c-1", Location.init("f_b"), .critical, 0.95));
+    try dfg.addIssue(Issue.init(.memory_leak, "c-2", Location.init("f_c"), .critical, 0.95));
+
+    const result = try dfg.getIssuesBySeverity(.critical);
+    defer freeIssuesSlice(std.testing.allocator, result);
+
+    try std.testing.expectEqual(@as(usize, 2), result.len);
+    try std.testing.expect(result[0].severity == .critical);
+    try std.testing.expect(result[1].severity == .critical);
+    try std.testing.expect(result[0].owned);
+    try std.testing.expect(result[0].function_owned);
 }

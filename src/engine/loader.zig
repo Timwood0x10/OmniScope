@@ -53,7 +53,7 @@ pub const IRLoader = struct {
 
         log.debug("Loading file: {s}", .{path});
 
-        _ = safe_loader.loadFile(path) catch |err| {
+        const loaded = safe_loader.loadFile(path) catch |err| {
             log.warn("Failed to load file: {}", .{err});
             return switch (err) {
                 llvm_safe.Error.FileNotFound => error.FileNotFound,
@@ -64,6 +64,7 @@ pub const IRLoader = struct {
                 llvm_safe.Error.OutOfMemory => error.OutOfMemory,
             };
         };
+        _ = loaded; // Module is held by safe_loader, accessible via getModule()
 
         return .{
             .allocator = allocator,

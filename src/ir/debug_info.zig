@@ -37,7 +37,7 @@ pub const DWARFSourceLanguage = enum(c_uint) {
     OpenCL = 20,
     GLslang = 21,
     Rust = 22,
-    Swift = 23,
+    CSharp = 23,
     Julia = 24,
     Dylan = 25,
     Fischer = 26,
@@ -183,9 +183,15 @@ pub const DIFile = struct {
 pub const DICompileUnit = struct {
     raw: c.LLVMMetadataRef,
 
+    /// Get the source language of this compile unit.
+    /// LLVMGetCompileUnitLanguage unavailable in LLVM 22 C DebugInfo.h.
+    /// Returns DWARFSourceLanguage.C as safe default (most FFI code is C-ABI).
     pub fn getLanguage(self: DICompileUnit) DWARFSourceLanguage {
-        const lang = c.LLVMGetCompileUnitLanguage(self.raw);
-        return @enumFromInt(lang);
+        _ = self;
+        // TODO: Re-enable when LLVM C API exposes compile unit language access.
+        // DWARF language is operand 0 of DICompileUnit metadata node,
+        // but LLVM 22 C API provides no accessor for it.
+        return .C;
     }
 
     pub fn getFilename(self: DICompileUnit) []const u8 {
@@ -206,11 +212,13 @@ pub const DISubprogram = struct {
         return c.LLVMDISubprogramGetLine(self.raw);
     }
 
+    /// Get the compile unit for this subprogram.
+    /// LLVMGetSubprogramCompileUnit unavailable in LLVM 22 C DebugInfo.h.
+    /// Returns null — callers must use alternative language detection.
     pub fn getCompileUnit(self: DISubprogram) ?DICompileUnit {
-        if (self.raw == null) return null;
-        const cu = c.LLVMGetSubprogramCompileUnit(self.raw);
-        if (cu == null) return null;
-        return DICompileUnit{ .raw = cu };
+        _ = self;
+        // TODO: Re-enable when LLVM C API exposes subprogram→CU navigation.
+        return null;
     }
 };
 
@@ -423,7 +431,7 @@ test "DWARFSourceLanguage - enum values" {
     try std.testing.expectEqual(@as(c_uint, 1), @intFromEnum(DWARFSourceLanguage.C));
     try std.testing.expectEqual(@as(c_uint, 3), @intFromEnum(DWARFSourceLanguage.C_plus_plus));
     try std.testing.expectEqual(@as(c_uint, 22), @intFromEnum(DWARFSourceLanguage.Rust));
-    try std.testing.expectEqual(@as(c_uint, 23), @intFromEnum(DWARFSourceLanguage.Swift));
+    try std.testing.expectEqual(@as(c_uint, 23), @intFromEnum(DWARFSourceLanguage.CSharp));
 }
 
 test "DIFlags - flag values" {

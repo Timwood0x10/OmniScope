@@ -127,7 +127,7 @@ export fn allocateEntity() ?*Entity {
     if (entity == null) return null;
 
     _ = c.memset(entity, 0, @sizeOf(Entity));
-    return @as(*Entity, @alignCast(@ptrCast(entity)));
+    return @as(*Entity, @ptrCast(@alignCast(entity)));
 }
 
 export fn destroyEntity(entity: *Entity) void {

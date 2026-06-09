@@ -12,7 +12,7 @@ const DiagnosticWriter = @import("../pass.zig").DiagnosticWriter;
 const FactStore = @import("../../fact/store.zig").FactStore;
 const FactKind = @import("../../fact/fact.zig").FactKind;
 
-const c = @import("../../ir/llvm_raw.zig");
+const c = @import("../../ir/llvm_raw.zig").c;
 const ValueRef = @import("../../ir/view.zig").ValueRef;
 const BasicBlockRef = @import("../../ir/view.zig").BasicBlockRef;
 const FunctionRef = @import("../../ir/view.zig").FunctionRef;
@@ -27,7 +27,7 @@ pub const CFGPass = struct {
     diag: *DiagnosticWriter,
     store: *FactStore,
     // Basic block ID mapping
-    bb_id_map: std.AutoHashMap(c.LLVMBasicBlockRef, u32),
+    bb_id_map: std.AutoHashMap(BasicBlockRef, u32),
     // Function ID
     func_id: u32,
 
@@ -37,29 +37,33 @@ pub const CFGPass = struct {
             .ctx = undefined,
             .diag = undefined,
             .store = store,
-            .bb_id_map = std.AutoHashMap(c.LLVMBasicBlockRef, u32).init(allocator),
+            .bb_id_map = std.AutoHashMap(BasicBlockRef, u32).init(allocator),
             .func_id = 0,
         };
     }
 
     /// Deinitialize the pass
-    pub fn deinit(self: *CFGPass, allocator: std.mem.Allocator) void {
-        self.bb_id_map.deinit(allocator);
+    pub fn deinit(self: *CFGPass) void {
+        self.bb_id_map.deinit();
     }
 
     /// Reset internal state for re-analysis
     fn reset(self: *CFGPass, allocator: std.mem.Allocator) void {
-        self.bb_id_map.deinit(allocator);
-        self.bb_id_map = std.AutoHashMap(c.LLVMBasicBlockRef, u32).init(allocator);
+        self.bb_id_map.deinit();
+        self.bb_id_map = std.AutoHashMap(BasicBlockRef, u32).init(allocator);
         self.func_id = 0;
     }
 
     /// Run the CFG pass on a module
     pub fn run(
-        self: *CFGPass,
         ctx: *PassContext,
         diag: *DiagnosticWriter,
     ) !void {
+        var fact_store = try FactStore.init(ctx.allocator);
+        defer fact_store.deinit();
+        var self = CFGPass.init(ctx.allocator, &fact_store);
+        defer self.deinit();
+
         self.ctx = ctx;
         self.diag = diag;
 
@@ -101,7 +105,7 @@ pub const CFGPass = struct {
                 bb = c.LLVMGetNextBasicBlock(bb);
                 continue;
             };
-            try self.bb_id_map.put(bb, bb_id);
+            try self.bb_id_map.put(BasicBlockRef{ .raw = bb }, bb_id);
 
             // Analyze basic block
             try self.analyzeBasicBlock(BasicBlockRef{ .raw = bb }, bb_id);
@@ -123,20 +127,19 @@ pub const CFGPass = struct {
         const opcode = c.LLVMGetInstructionOpcode(terminator);
 
         // Based on opcode, emit cfg_edge facts
-        const opcode_enum: c.LLVMOpcode = @enumFromInt(opcode);
-        switch (opcode_enum) {
-            .Br => {
+        switch (opcode) {
+            c.LLVMBr => {
                 // Branch: handle conditional and unconditional
                 try self.handleBranch(terminator, bb_id);
             },
-            .Switch => {
+            c.LLVMSwitch => {
                 // Switch: handle multiple cases
                 try self.handleSwitch(terminator, bb_id);
             },
-            .Ret => {
+            c.LLVMRet => {
                 // Return: no successors
             },
-            .Invoke, .CallBr, .IndirectBr => {
+            c.LLVMInvoke, c.LLVMCallBr, c.LLVMIndirectBr => {
                 // Complex terminators: handle generically
                 try self.handleGenericTerminator(terminator, bb_id);
             },
@@ -152,20 +155,23 @@ pub const CFGPass = struct {
 
         if (num_operands == 1) {
             // Unconditional branch: one successor
-            const target_bb = c.LLVMGetOperand(terminator, 0);
-            const target_bb_id = self.bb_id_map.get(target_bb) orelse return;
+            const target_bb_val = c.LLVMGetOperand(terminator, 0);
+            const target_bb = c.LLVMValueAsBasicBlock(target_bb_val);
+            const target_bb_id = self.bb_id_map.get(BasicBlockRef{ .raw = target_bb }) orelse return;
             try self.store.insert(.cfg_edge, source_bb_id, target_bb_id, self.func_id);
         } else if (num_operands == 3) {
             // Conditional branch: two successors (true, false)
             // Operands: [condition, true_bb, false_bb]
-            const true_bb = c.LLVMGetOperand(terminator, 1);
-            const false_bb = c.LLVMGetOperand(terminator, 2);
+            const true_bb_val = c.LLVMGetOperand(terminator, 1);
+            const false_bb_val = c.LLVMGetOperand(terminator, 2);
+            const true_bb = c.LLVMValueAsBasicBlock(true_bb_val);
+            const false_bb = c.LLVMValueAsBasicBlock(false_bb_val);
 
-            if (self.bb_id_map.get(true_bb)) |true_bb_id| {
+            if (self.bb_id_map.get(BasicBlockRef{ .raw = true_bb })) |true_bb_id| {
                 try self.store.insert(.cfg_edge, source_bb_id, true_bb_id, self.func_id);
             }
 
-            if (self.bb_id_map.get(false_bb)) |false_bb_id| {
+            if (self.bb_id_map.get(BasicBlockRef{ .raw = false_bb })) |false_bb_id| {
                 try self.store.insert(.cfg_edge, source_bb_id, false_bb_id, self.func_id);
             }
         }
@@ -178,7 +184,7 @@ pub const CFGPass = struct {
 
         for (0..@intCast(num_successors)) |i| {
             const successor_bb = c.LLVMGetSuccessor(terminator, @intCast(i));
-            const successor_bb_id = self.bb_id_map.get(successor_bb) orelse continue;
+            const successor_bb_id = self.bb_id_map.get(BasicBlockRef{ .raw = successor_bb }) orelse continue;
             try self.store.insert(.cfg_edge, source_bb_id, successor_bb_id, self.func_id);
         }
     }
@@ -189,7 +195,7 @@ pub const CFGPass = struct {
 
         for (0..@intCast(num_successors)) |i| {
             const successor_bb = c.LLVMGetSuccessor(terminator, @intCast(i));
-            const successor_bb_id = self.bb_id_map.get(successor_bb) orelse continue;
+            const successor_bb_id = self.bb_id_map.get(BasicBlockRef{ .raw = successor_bb }) orelse continue;
             try self.store.insert(.cfg_edge, source_bb_id, successor_bb_id, self.func_id);
         }
     }

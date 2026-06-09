@@ -1,0 +1,225 @@
+//! Nomicon Ch5: Uninitialized Memory Detection (MaybeUninit<T>)
+//!
+//! Detects usage of uninitialized memory through MaybeUninit<T> patterns.
+//! Reading uninitialized memory is undefined behavior and can lead to
+//! information disclosure or crashes.
+//!
+//! Nomicon §5: Uninitialized Memory
+//! - MaybeUninit::assume_init() on uninitialized data → UB
+//! - Reading union fields before writing → UB
+//! - Using uninitialized stack variables → UB (prevented by Rust, but not in unsafe)
+//!
+//! Covers:
+//! - MaybeUninit::assume_init() without prior write
+//! - Uninitialized struct/array field access
+//! - Memory allocation followed by immediate read without initialization
+
+const std = @import("std");
+const log = std.log.scoped(.nomicon_ch5);
+const c = @import("../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../ir/llvm_safe.zig");
+const SemanticTree = @import("../semantic_tree.zig").SemanticTree;
+const SemanticKind = @import("../semantic_tree.zig").SemanticKind;
+const DiagnosticWriter = @import("../../pass/pass.zig").DiagnosticWriter;
+
+/// Function name patterns that indicate MaybeUninit operations
+const UNINIT_PATTERNS = [_][]const u8{
+    "assume_init",
+    "MaybeUninit",
+    "uninit",
+    "uninitialized",
+    "__MaybeInit",
+};
+
+/// Alloc functions that return uninitialized memory
+const ALLOC_UNINIT_PATTERNS = [_][]const u8{
+    "alloc_uninit",
+    "allocZeroed", // This IS initialized (zeroed), so it's safe
+    "malloc", // C malloc returns uninitialized memory
+    "__rust_alloc",
+};
+
+/// Detect uninitialized memory usage patterns (per-function).
+/// Extracted for single-pass merged traversal optimization.
+pub fn detectFunction(
+    func: c.LLVMValueRef,
+    module: c.LLVMModuleRef,
+    srt: *SemanticTree,
+    diag: *DiagnosticWriter,
+) !void {
+    _ = diag;
+    if (c.LLVMIsDeclaration(func) != 0) return;
+
+    const func_name_raw = c.LLVMGetValueName(func);
+    if (@intFromPtr(func_name_raw) == 0) return;
+    const func_name = std.mem.sliceTo(func_name_raw, 0);
+
+    var bb = c.LLVMGetFirstBasicBlock(func);
+    while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+        var inst = c.LLVMGetFirstInstruction(bb);
+        while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+            const opcode = c.LLVMGetInstructionOpcode(inst);
+
+            if (llvm_safe.isCallOrInvoke(opcode)) {
+                const called_func = c.LLVMGetCalledValue(inst);
+                if (@intFromPtr(called_func) == 0) continue;
+
+                const called_name_raw = c.LLVMGetValueName(called_func);
+                if (@intFromPtr(called_name_raw) == 0) continue;
+                const called_name = std.mem.sliceTo(called_name_raw, 0);
+
+                if (isAssumeInitPattern(called_name)) {
+                    _ = analyzeAssumeInitUsage(inst, func_name, srt);
+                }
+
+                if (isUninitAllocPattern(called_name)) {
+                    _ = analyzeAllocWithoutInit(inst, func_name, srt);
+                }
+            }
+
+            if (opcode == c.LLVMLoad) {
+                _ = analyzePotentialUninitLoad(module, inst, srt);
+            }
+        }
+    }
+}
+
+/// Detect uninitialized memory usage patterns.
+pub fn detect(
+    module: c.LLVMModuleRef,
+    srt: *SemanticTree,
+    diag: *DiagnosticWriter,
+) !void {
+    var fn_iter = c.LLVMGetFirstFunction(module);
+    while (@intFromPtr(fn_iter) != 0) : (fn_iter = c.LLVMGetNextFunction(fn_iter)) {
+        try detectFunction(fn_iter, module, srt, diag);
+    }
+}
+
+/// Check if a function name matches the assume_init pattern.
+fn isAssumeInitPattern(name: []const u8) bool {
+    return std.mem.indexOf(u8, name, "assume_init") != null or
+        std.mem.indexOf(u8, name, "assumeInit") != null;
+}
+
+/// Check if a function returns uninitialized memory.
+fn isUninitAllocPattern(name: []const u8) bool {
+    for (ALLOC_UNINIT_PATTERNS) |pattern| {
+        if (std.mem.eql(u8, name, pattern) or
+            std.mem.indexOf(u8, name, pattern) != null)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Analyze an assume_init call to check if the MaybeUninit was properly initialized.
+fn analyzeAssumeInitUsage(
+    inst: c.LLVMValueRef,
+    func_name: []const u8,
+    srt: *SemanticTree,
+) bool {
+    _ = func_name;
+
+    // In a full implementation, we would:
+    // 1. Track the MaybeUninit value being operated on
+    // 2. Check if there was a store to it before this assume_init
+    // 3. If no store found, flag as potential UB
+
+    // For now, we conservatively flag all assume_init calls as suspicious
+    // The confidence can be increased with proper dataflow analysis
+    recordResolution(srt, @intFromPtr(inst), .uninit_memory_use, 0.60, "Nomicon-Ch5 assume_init (needs dataflow verification)");
+
+    return true;
+}
+
+/// Analyze an allocation call to check if memory is used before initialization.
+fn analyzeAllocWithoutInit(
+    inst: c.LLVMValueRef,
+    func_name: []const u8,
+    srt: *SemanticTree,
+) bool {
+    _ = func_name;
+
+    // Check if the next instruction(s) use this value without initializing it first
+    // This is a simplified heuristic; full implementation needs def-use analysis
+
+    const next_inst = c.LLVMGetNextInstruction(inst);
+    if (@intFromPtr(next_inst) == 0) return false;
+
+    const next_opcode = c.LLVMGetInstructionOpcode(next_inst);
+
+    // If the very next instruction is a load or store using the allocated pointer
+    // without a memset/memcpy in between, it's suspicious
+    if (next_opcode == c.LLVMLoad or next_opcode == c.LLVMStore) {
+        // Check if any operand is our allocation result
+        var i: u32 = 0;
+        const num_ops = c.LLVMGetNumOperands(next_inst);
+        while (i < num_ops) : (i += 1) {
+            const op = c.LLVMGetOperand(next_inst, i);
+            if (op == inst) {
+                recordResolution(srt, @intFromPtr(next_inst), .uninit_memory_use, 0.70, "Nomicon-Ch5 alloc used without initialization");
+
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+/// Analyze a load instruction for potential uninitialized memory access.
+fn analyzePotentialUninitLoad(module: c.LLVMModuleRef, inst: c.LLVMValueRef, srt: *SemanticTree) bool {
+    const ptr_operand = c.LLVMGetOperand(inst, 0);
+
+    // Check if this load is from an alloca (stack variable)
+    if (c.LLVMGetInstructionOpcode(ptr_operand) == c.LLVMAlloca) {
+        // In a full implementation, we'd track whether this alloca was written to
+        // before this load. For now, we just note the pattern.
+
+        // Only flag if the alloca is for a large type (struct/array)
+        // Small scalar types are usually initialized by Rust's default rules
+        const alloc_type = c.LLVMGetAllocatedType(ptr_operand);
+        const type_size = getTypeSize(module, alloc_type);
+
+        if (type_size > 16) { // Larger than 2 pointers — likely a struct/array
+            recordResolution(srt, @intFromPtr(inst), .uninit_memory_use, 0.45, "Nomicon-Ch5 potential uninit load from large alloca");
+
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Get the size of a type in bytes using LLVM data layout.
+fn getTypeSize(module: c.LLVMModuleRef, type_ref: c.LLVMTypeRef) u64 {
+    const layout = c.LLVMGetModuleDataLayout(module);
+    return c.LLVMStoreSizeOfType(layout, type_ref);
+}
+
+/// Record a semantic resolution to the SRT.
+fn recordResolution(
+    srt: *SemanticTree,
+    value_ref: u64,
+    kind: SemanticKind,
+    confidence: f32,
+    evidence: []const u8,
+) void {
+    srt.recordResolution(value_ref, kind, confidence, "Nomicon-Ch5", evidence) catch {};
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+test "Ch5: detect uninit patterns" {
+    try std.testing.expect(isAssumeInitPattern("assume_init"));
+    try std.testing.expect(isAssumeInitPattern("_ZN4core6mem12MaybeUninit11assume_init17h..."));
+    try std.testing.expect(!isAssumeInitPattern("safe_function"));
+
+    try std.testing.expect(isUninitAllocPattern("malloc"));
+    try std.testing.expect(isUninitAllocPattern("__rust_alloc"));
+    try std.testing.expect(!isUninitAllocPattern("calloc")); // calloc zeros memory
+}

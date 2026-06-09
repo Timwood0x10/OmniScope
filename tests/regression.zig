@@ -40,8 +40,8 @@ test "Regression: layer counts unchanged" {
 // Regression: RiskKind Enum Size
 // ========================================
 
-test "Regression: RiskKind has exactly 13 variants" {
-    try std.testing.expectEqual(@as(usize, 13), @typeInfo(registry.RiskKind).@"enum".fields.len);
+test "Regression: RiskKind has exactly 21 variants" {
+    try std.testing.expectEqual(@as(usize, 21), @typeInfo(registry.RiskKind).@"enum".fields.len);
 }
 
 // ========================================

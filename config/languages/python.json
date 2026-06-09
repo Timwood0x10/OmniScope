@@ -1,0 +1,305 @@
+{
+  "language": "python",
+  "version": "1.0",
+  "description": "Python/C extension FFI boundary patterns - reference counting, GC, buffer protocol, PyCapsule (ref: PYTHON_IR_SPEC.md)",
+  "functions": [
+    {
+      "pattern": "Py_INCREF",
+      "match_type": "exact",
+      "kind": "refcount_inc",
+      "severity": "medium",
+      "consumes_ownership": false,
+      "transfers_ownership": false,
+      "requires_null_check": false,
+      "requires_taint_check": false,
+      "description": "Increment reference count (IR SPEC \u00a71.2)"
+    },
+    {
+      "pattern": "Py_DECREF",
+      "match_type": "exact",
+      "kind": "refcount_dec",
+      "severity": "high",
+      "consumes_ownership": true,
+      "transfers_ownership": false,
+      "requires_null_check": false,
+      "requires_taint_check": false,
+      "description": "Decrement reference count - consumes ownership (IR SPEC \u00a71.2)"
+    },
+    {
+      "pattern": "Py_XDECREF",
+      "match_type": "exact",
+      "kind": "refcount_dec",
+      "severity": "high",
+      "consumes_ownership": true,
+      "transfers_ownership": false,
+      "requires_null_check": false,
+      "requires_taint_check": false,
+      "description": "NULL-safe decref - consumes ownership (IR SPEC \u00a71.2)"
+    },
+    {
+      "pattern": "Py_XINCREF",
+      "match_type": "exact",
+      "kind": "refcount_inc",
+      "severity": "low",
+      "consumes_ownership": false,
+      "transfers_ownership": false,
+      "requires_null_check": false,
+      "requires_taint_check": false,
+      "description": "NULL-safe incref (IR SPEC \u00a71.2)"
+    },
+    {
+      "pattern": "Py_NewRef",
+      "match_type": "exact",
+      "kind": "allocator",
+      "severity": "medium",
+      "consumes_ownership": false,
+      "transfers_ownership": true,
+      "requires_null_check": true,
+      "requires_taint_check": false,
+      "description": "Create new owned reference (IR SPEC \u00a71.2)"
+    },
+    {
+      "pattern": "Py_CLEAR",
+      "match_type": "exact",
+      "kind": "refcount_dec",
+      "severity": "high",
+      "consumes_ownership": true,
+      "transfers_ownership": false,
+      "requires_null_check": false,
+      "requires_taint_check": false,
+      "description": "Clear reference - sets NULL then decref (IR SPEC \u00a71.2)"
+    },
+    {
+      "pattern": "PyObject_New",
+      "match_type": "prefix",
+      "kind": "allocator",
+      "severity": "high",
+      "consumes_ownership": false,
+      "transfers_ownership": true,
+      "requires_null_check": true,
+      "requires_taint_check": false,
+      "description": "Allocate Python object (IR SPEC \u00a73)"
+    },
+    {
+      "pattern": "PyObject_GC_New",
+      "match_type": "prefix",
+      "kind": "allocator",
+      "severity": "high",
+      "consumes_ownership": false,
+      "transfers_ownership": true,
+      "requires_null_check": true,
+      "requires_taint_check": false,
+      "description": "Allocate GC-tracked Python object (IR SPEC \u00a73)"
+    },
+    {
+      "pattern": "PyInit_",
+      "match_type": "prefix",
+      "kind": "module_init",
+      "severity": "medium",
+      "consumes_ownership": false,
+      "transfers_ownership": false,
+      "requires_null_check": false,
+      "requires_taint_check": false,
+      "description": "C extension module init function (IR SPEC \u00a75)"
+    },
+    {
+      "pattern": "PyArg_ParseTuple",
+      "match_type": "prefix",
+      "kind": "arg_parse",
+      "severity": "medium",
+      "consumes_ownership": false,
+      "transfers_ownership": false,
+      "requires_null_check": false,
+      "requires_taint_check": true,
+      "description": "Parse Python args in C extension (IR SPEC \u00a75)"
+    },
+    {
+      "pattern": "Py_BuildValue",
+      "match_type": "prefix",
+      "kind": "value_build",
+      "severity": "medium",
+      "consumes_ownership": false,
+      "transfers_ownership": true,
+      "requires_null_check": true,
+      "requires_taint_check": false,
+      "description": "Build Python value from C (IR SPEC \u00a75)"
+    },
+    {
+      "pattern": "PyCapsule_",
+      "match_type": "prefix",
+      "kind": "capsule",
+      "severity": "high",
+      "consumes_ownership": false,
+      "transfers_ownership": true,
+      "requires_null_check": true,
+      "requires_taint_check": false,
+      "description": "PyCapsule opaque pointer wrapping (IR SPEC \u00a77)"
+    },
+    {
+      "pattern": "PyObject_GetBuffer",
+      "match_type": "exact",
+      "kind": "buffer",
+      "severity": "medium",
+      "consumes_ownership": false,
+      "transfers_ownership": true,
+      "requires_null_check": true,
+      "requires_taint_check": false,
+      "description": "Get buffer view - must PyBuffer_Release (IR SPEC \u00a76)"
+    },
+    {
+      "pattern": "PyBuffer_Release",
+      "match_type": "exact",
+      "kind": "buffer",
+      "severity": "high",
+      "consumes_ownership": true,
+      "transfers_ownership": false,
+      "requires_null_check": false,
+      "requires_taint_check": false,
+      "description": "Release buffer view (IR SPEC \u00a76)"
+    }
+  ],
+  "stdlib_prefixes": [
+    "Py",
+    "_Py"
+  ],
+  "noise_prefixes": [
+    "_PyRuntime",
+    "_PyInterpreter",
+    "_PyThread",
+    "_PyStackRef",
+    "_Py_CODEUNIT",
+    "_Py_IDENTIFIER",
+    "_Py_static_string",
+    "update_refs",
+    "subtract_refs",
+    "move_unreachable",
+    "_PyObject_ClearFreeLists",
+    "_PyRuntimeState_Init",
+    "_PyGC_Init",
+    "_Py_Dealloc",
+    "_PyTrash_",
+    "_Py_ForgetReference",
+    "_PyReftracerTrack"
+  ],
+  "compiler_reserved": [
+    "_Py_",
+    "_PyRuntime",
+    "_PyRuntimeState",
+    "_PyInterpreterState",
+    "_PyThreadState",
+    "_PyStackRef",
+    "_Py_CODEUNIT",
+    "_Py_Dealloc",
+    "_PyTrash_thread_deposit_object",
+    "_PyTrash_thread_destroy_chain",
+    "_Py_IsImmortal",
+    "_Py_IsStaticImmortal",
+    "_Py_IMMORTAL"
+  ],
+  "ffi_boundary_patterns": [
+    "Py_INCREF",
+    "Py_DECREF",
+    "Py_XDECREF",
+    "Py_XINCREF",
+    "Py_NewRef",
+    "Py_CLEAR",
+    "PyObject_New",
+    "PyObject_GC_New",
+    "PyObject_Malloc",
+    "PyObject_Free",
+    "PyObject_GetBuffer",
+    "PyBuffer_Release",
+    "PyCapsule_New",
+    "PyCapsule_GetPointer",
+    "PyCapsule_SetDestructor",
+    "PyInit_",
+    "PyArg_ParseTuple",
+    "Py_BuildValue"
+  ],
+  "refcount_bug_patterns": [
+    {
+      "bug": "double_decref",
+      "description": "Py_DECREF twice without intervening Py_INCREF (IR SPEC \u00a710)"
+    },
+    {
+      "bug": "missing_decref",
+      "description": "Owning reference not Py_DECREF'd before return (IR SPEC \u00a710)"
+    },
+    {
+      "bug": "borrowed_escape",
+      "description": "Returning/storing borrowed reference beyond lifetime (IR SPEC \u00a710)"
+    },
+    {
+      "bug": "stolen_misuse",
+      "description": "Py_DECREF on reference already stolen by PyTuple_SetItem (IR SPEC \u00a710)"
+    },
+    {
+      "bug": "null_deref",
+      "description": "Not checking NULL from allocation/API functions (IR SPEC \u00a710)"
+    },
+    {
+      "bug": "use_after_decref",
+      "description": "Accessing object after Py_DECREF when refcount may reach 0 (IR SPEC \u00a710)"
+    },
+    {
+      "bug": "missing_gc_visit",
+      "description": "Failing to visit all objects in tp_traverse (IR SPEC \u00a710)"
+    },
+    {
+      "bug": "buffer_release_omission",
+      "description": "Failing to call PyBuffer_Release after PyObject_GetBuffer (IR SPEC \u00a710)"
+    }
+  ],
+  "fp_suppression": [
+    {
+      "pattern": "_Py_Dealloc",
+      "match_type": "prefix",
+      "reason": "CPython dealloc plumbing - runtime infrastructure (IR SPEC \u00a710)"
+    },
+    {
+      "pattern": "_PyStackRef",
+      "match_type": "prefix",
+      "reason": "Eval loop internals - runtime infrastructure (IR SPEC \u00a710)"
+    },
+    {
+      "pattern": "_PyRuntime",
+      "match_type": "prefix",
+      "reason": "Runtime state management (IR SPEC \u00a78)"
+    },
+    {
+      "pattern": "_PyInterpreter",
+      "match_type": "prefix",
+      "reason": "Interpreter state management (IR SPEC \u00a78)"
+    },
+    {
+      "pattern": "_PyTrash_",
+      "match_type": "prefix",
+      "reason": "Trashcan mechanism - runtime plumbing (IR SPEC \u00a79.2)"
+    },
+    {
+      "pattern": "_Py_ForgetReference",
+      "match_type": "prefix",
+      "reason": "Reference tracking - debug infrastructure (IR SPEC \u00a711)"
+    },
+    {
+      "pattern": "_Py_IsImmortal",
+      "match_type": "prefix",
+      "reason": "Immortal object check - optimization (IR SPEC \u00a71.3)"
+    },
+    {
+      "pattern": "_PyObject_ClearFreeLists",
+      "match_type": "prefix",
+      "reason": "Free list management - allocator internals (IR SPEC \u00a710)"
+    }
+  ],
+  "escape_patterns": [
+    "Py_INCREF",
+    "Py_DECREF",
+    "Py_XDECREF",
+    "Py_NewRef",
+    "Py_CLEAR",
+    "PyObject_GetBuffer",
+    "PyCapsule_New",
+    "PyInit_"
+  ]
+}

@@ -15,23 +15,27 @@ const Issue = @import("../../diag/issue.zig").Issue;
 const TraceEntry = @import("../../diag/issue.zig").TraceEntry;
 const Severity = @import("../../diag/issue.zig").Severity;
 
+const CandidateBuilder = @import("resource/issue_candidate_builder.zig").CandidateBuilder;
+const IssueCandidate = @import("resource/issue_candidate_builder.zig").IssueCandidate;
+const IssueKind = @import("resource/issue_candidate_builder.zig").IssueKind;
+
 /// Confidence levels for callback escape issue reporting.
 /// Named constants replace magic numbers for maintainability.
-const Confidence = struct {
+pub const Confidence = struct {
     /// High: confirmed dangerous pattern with strong evidence (CGo KeepAlive, FFI-augmented escape)
-    const high_keepalive: f32 = 0.78;
-    const high_callback_ffi: f32 = 0.80;
+    pub const high_keepalive: f32 = 0.78;
+    pub const high_callback_ffi: f32 = 0.80;
 
     /// Medium-high: likely issue with moderate evidence (base callback escape, unsafe ptr, alloc/free imbalance)
-    const med_callback_base: f32 = 0.68;
-    const med_unsafe_ptr: f32 = 0.72;
-    const med_malloc_leak: f32 = 0.70;
+    pub const med_callback_base: f32 = 0.68;
+    pub const med_unsafe_ptr: f32 = 0.72;
+    pub const med_malloc_leak: f32 = 0.70;
 
     /// Medium: possible issue, needs validation (CBytes retention)
-    const med_cbytes_escape: f32 = 0.65;
+    pub const med_cbytes_escape: f32 = 0.65;
 
     /// Low: weak signal, high FP risk from incomplete LLVM IR type info
-    const low_sig_mismatch: f32 = 0.45;
+    pub const low_sig_mismatch: f32 = 0.45;
 };
 
 /// Information about a CGo call that may retain a Go pointer.
@@ -53,6 +57,43 @@ pub fn makeTrace(allocator: std.mem.Allocator, comptime fmt: []const u8, args: a
     return TraceEntry.initOwned(desc);
 }
 
+pub fn reportCBytesEscape(
+    ctx: *PassContext,
+    func_name: []const u8,
+    call: CGoCallInfo,
+    diag: *DiagnosticWriter,
+) !void {
+    const location = Location.init(func_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init("Go []byte (CBytes) escaped to C callback");
+    trace[1] = try makeTrace(ctx.allocator, "Call to {s}() at cgo boundary", .{call.callee_name});
+    trace[2] = try makeTrace(ctx.allocator, "CBytes lifetime may exceed Go GC scope (CWE-662)", .{});
+
+    const message = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Go CBytes escaped to C callback in {s} — potential use-after-free if Go reclaims memory",
+        .{func_name},
+    );
+
+    var cbe_cand = IssueCandidate.init(ctx.allocator, .callback_escape, 0.65);
+    cbe_cand.func_name = func_name;
+    cbe_cand.is_on_ffi_path = true;
+    cbe_cand.addEvidence("Go []byte escaped to C callback") catch {};
+
+    var issue = Issue.initWithTrace(
+        .callback_ownership_risk,
+        message,
+        location,
+        .medium,
+        cbe_cand.raw_score,
+        trace,
+    );
+    errdefer issue.deinit(ctx.allocator);
+    try ctx.addIssue(&issue);
+    diag.warn("[CBYTES-ESCAPE] {s} in {s}", .{ call.callee_name, func_name });
+}
+
 pub fn reportMissingKeepAlive(
     ctx: *PassContext,
     func_name: []const u8,
@@ -72,49 +113,52 @@ pub fn reportMissingKeepAlive(
         .{call.callee_name},
     );
 
-    const issue = Issue.initWithTrace(
+    var ka_cand = IssueCandidate.init(ctx.allocator, .leak, 0.70);
+    ka_cand.func_name = func_name;
+    ka_cand.addEvidence("Missing runtime.KeepAlive for Go pointer passed to C") catch {};
+
+    var issue = Issue.initWithTrace(
         .borrow_escape,
         message,
         location,
         .high,
-        Confidence.high_keepalive,
+        ka_cand.raw_score,
         trace,
     );
-
+    errdefer issue.deinit(ctx.allocator); // FIXED: Prevent leak if addIssue fails
     try ctx.addIssue(&issue);
     diag.warn("[NO-KEEPALIVE] {s} -> {s}() in {s}", .{ "Go ptr", call.callee_name, func_name });
 }
 
-pub fn reportCBytesEscape(
+/// Generate a CBytes escape candidate.
+/// Returns an IssueCandidate instead of directly reporting.
+pub fn generateCBytesEscapeCandidate(
     ctx: *PassContext,
     func_name: []const u8,
     call: CGoCallInfo,
     diag: *DiagnosticWriter,
-) !void {
-    const location = Location.init(func_name);
+) !IssueCandidate {
+    var candidate = IssueCandidate.init(ctx.allocator, .leak, Confidence.med_cbytes_escape);
+    candidate.func_name = func_name;
+    candidate.inst_addr = 0;
+    candidate.callee_name = call.callee_name;
 
-    const trace = try ctx.allocator.alloc(TraceEntry, 3);
-    trace[0] = TraceEntry.init("C.CBytes result passed to C function that may retain pointer");
-    trace[1] = try makeTrace(ctx.allocator, "{s}() returns C-managed copy of Go bytes", .{call.callee_name});
-    trace[2] = try makeTrace(ctx.allocator, "Caller must ensure Go backing store outlives C usage (CWE-401)", .{});
+    try candidate.addEvidence("C.CBytes result passed to C function that may retain pointer");
+    try candidate.addEvidence(try std.fmt.allocPrint(
+        ctx.allocator,
+        "{s}() returns C-managed copy of Go bytes",
+        .{call.callee_name},
+    ));
+    try candidate.addEvidence("Caller must ensure Go backing store outlives C usage (CWE-401)");
 
-    const message = try std.fmt.allocPrint(
+    candidate.reason = try std.fmt.allocPrint(
         ctx.allocator,
         "C.{s}() result escapes to retaining C function - verify Go slice lifetime",
         .{call.callee_name},
     );
 
-    const issue = Issue.initWithTrace(
-        .memory_leak,
-        message,
-        location,
-        .medium,
-        Confidence.med_cbytes_escape,
-        trace,
-    );
-
-    try ctx.addIssue(&issue);
     diag.warn("[CBYTES-ESCAPE] {s} in {s}", .{ call.callee_name, func_name });
+    return candidate;
 }
 
 pub fn reportGenericCallbackEscape(
@@ -153,15 +197,20 @@ pub fn reportGenericCallbackEscape(
         .{ escape.receiver_name, func_name, confidence * 100.0, ffi_note },
     );
 
-    const issue = Issue.initWithTrace(
+    var co_cand = IssueCandidate.init(ctx.allocator, .callback_escape, 0.75);
+    co_cand.func_name = func_name;
+    co_cand.is_on_ffi_path = true;
+    co_cand.addEvidence("Go pointer stored in C callback context without KeepAlive") catch {};
+
+    var issue = Issue.initWithTrace(
         .borrow_escape,
         message,
         location,
         severity,
-        confidence,
+        co_cand.raw_score,
         trace,
     );
-
+    errdefer issue.deinit(ctx.allocator); // FIXED: Prevent leak if addIssue fails
     try ctx.addIssue(&issue);
     diag.warn("[CALLBACK-ESCAPE] {s} -> {s} in {s}{s}", .{ "fn_ptr", escape.receiver_name, func_name, ffi_note });
 }
@@ -186,49 +235,80 @@ pub fn reportSignatureMismatch(
         .{ escape.receiver_name, func_name },
     );
 
-    const issue = Issue.initWithTrace(
+    var uaf_cand = IssueCandidate.init(ctx.allocator, .use_after_release, 0.80);
+    uaf_cand.func_name = func_name;
+    uaf_cand.is_on_ffi_path = true;
+    uaf_cand.addEvidence("Potential use-after-free in CGo callback") catch {};
+
+    var issue = Issue.initWithTrace(
         .callback_signature_mismatch,
         message,
         location,
         .low,
-        Confidence.low_sig_mismatch,
+        uaf_cand.raw_score,
         trace,
     );
-
+    errdefer issue.deinit(ctx.allocator); // FIXED: Prevent leak if addIssue fails
     try ctx.addIssue(&issue);
     diag.warn("[CALLBACK-SIG] {s} -> {s} in {s}", .{ "sig_mismatch", escape.receiver_name, func_name });
 }
 
-pub fn reportUnsafePtrRisk(
+/// Generate an unsafe pointer risk candidate.
+/// Returns an IssueCandidate instead of directly reporting.
+pub fn generateUnsafePtrRiskCandidate(
     ctx: *PassContext,
     func_name: []const u8,
     call: CGoCallInfo,
     diag: *DiagnosticWriter,
-) !void {
-    const location = Location.init(func_name);
+) !IssueCandidate {
+    var candidate = IssueCandidate.init(ctx.allocator, .borrow_escape, Confidence.med_unsafe_ptr);
+    candidate.func_name = func_name;
+    candidate.inst_addr = 0;
+    candidate.callee_name = call.callee_name;
 
-    const trace = try ctx.allocator.alloc(TraceEntry, 3);
-    trace[0] = TraceEntry.init("unsafe.Pointer conversion at FFI boundary");
-    trace[1] = try makeTrace(ctx.allocator, "Conversion via {s}() breaks Go type system guarantees", .{call.callee_name});
-    trace[2] = try makeTrace(ctx.allocator, "Pointer may become invalid if GC moves the underlying object (CWE-704)", .{});
+    try candidate.addEvidence("unsafe.Pointer conversion at FFI boundary");
+    try candidate.addEvidence(try std.fmt.allocPrint(
+        ctx.allocator,
+        "Conversion via {s}() breaks Go type system guarantees",
+        .{call.callee_name},
+    ));
+    try candidate.addEvidence("Pointer may become invalid if GC moves the underlying object (CWE-704)");
 
-    const message = try std.fmt.allocPrint(
+    candidate.reason = try std.fmt.allocPrint(
         ctx.allocator,
         "unsafe.Pointer conversion ({s}) at cgo boundary - dangling pointer risk if object relocates",
         .{call.callee_name},
     );
 
-    const issue = Issue.initWithTrace(
-        .borrow_escape,
-        message,
-        location,
-        .high,
-        Confidence.med_unsafe_ptr,
-        trace,
+    diag.warn("[UNSAFE-PTR] {s} in {s}", .{ call.callee_name, func_name });
+    return candidate;
+}
+
+/// Generate a memory leak candidate for malloc/free imbalance.
+/// Returns an IssueCandidate instead of directly reporting.
+/// The caller (callback_escape.zig) should pass this to IssueVerifier.
+pub fn generateMallocLeakCandidate(
+    ctx: *PassContext,
+    func_name: []const u8,
+    malloc_count: u32,
+    free_count: u32,
+    diag: *DiagnosticWriter,
+) !IssueCandidate {
+    var candidate = IssueCandidate.init(ctx.allocator, .leak, Confidence.med_malloc_leak);
+    candidate.func_name = func_name;
+    candidate.inst_addr = 0; // Will be set by caller if available
+
+    try candidate.addEvidenceFmt("{d} malloc/calloc calls found", .{malloc_count});
+    try candidate.addEvidenceFmt("{d} free() calls found - {d} allocations never freed", .{ free_count, malloc_count - free_count });
+
+    candidate.reason = try std.fmt.allocPrint(
+        ctx.allocator,
+        "Memory leak: {d} malloc/calloc without matching free in {s} (CWE-401)",
+        .{ malloc_count - free_count, func_name },
     );
 
-    try ctx.addIssue(&issue);
-    diag.warn("[UNSAFE-PTR] {s} in {s}", .{ call.callee_name, func_name });
+    diag.warn("[MALLOC-LEAK] {d} allocs vs {d} frees in {s}", .{ malloc_count, free_count, func_name });
+    return candidate;
 }
 
 pub fn reportMallocLeak(
@@ -238,29 +318,11 @@ pub fn reportMallocLeak(
     free_count: u32,
     diag: *DiagnosticWriter,
 ) !void {
+    const candidate = try generateMallocLeakCandidate(ctx, func_name, malloc_count, free_count, diag);
     const location = Location.init(func_name);
-
-    const trace = try ctx.allocator.alloc(TraceEntry, 2);
-    trace[0] = try makeTrace(ctx.allocator, "{d} malloc/calloc calls found", .{malloc_count});
-    trace[1] = try makeTrace(ctx.allocator, "{d} free() calls found - {d} allocations never freed", .{ free_count, malloc_count - free_count });
-
-    const message = try std.fmt.allocPrint(
-        ctx.allocator,
-        "Memory leak: {d} malloc/calloc without matching free in {s} (CWE-401)",
-        .{ malloc_count - free_count, func_name },
-    );
-
-    const issue = Issue.initWithTrace(
-        .memory_leak,
-        message,
-        location,
-        .medium,
-        Confidence.med_malloc_leak,
-        trace,
-    );
-
+    var issue = Issue.init(.memory_leak, candidate.reason orelse "Memory leak detected", location, .low, 0.5);
+    errdefer issue.deinit(ctx.allocator);
     try ctx.addIssue(&issue);
-    diag.warn("[MALLOC-LEAK] {d} allocs vs {d} frees in {s}", .{ malloc_count, free_count, func_name });
 }
 
 pub fn reportFreeOrphan(
@@ -282,15 +344,20 @@ pub fn reportFreeOrphan(
         .{ free_count - malloc_count, malloc_count, func_name },
     );
 
-    const issue = Issue.initWithTrace(
+    var up_cand = IssueCandidate.init(ctx.allocator, .borrow_escape, 0.82);
+    up_cand.func_name = func_name;
+    up_cand.is_on_ffi_path = true;
+    up_cand.addEvidence("Unsafe pointer usage detected") catch {};
+
+    var issue = Issue.initWithTrace(
         .double_free,
         message,
         location,
         .high,
-        Confidence.med_callback_base,
+        up_cand.raw_score,
         trace,
     );
-
+    errdefer issue.deinit(ctx.allocator); // FIXED: Prevent leak if addIssue fails
     try ctx.addIssue(&issue);
     diag.warn("[FREE-ORPHAN] {d} frees vs {d} allocs in {s}", .{ free_count, malloc_count, func_name });
 }

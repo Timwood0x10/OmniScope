@@ -1,9 +1,9 @@
 {
-  "version": "0.1.6",
-  "timestamp": "2026-04-30T05:39:56.903830",
-  "total_files": 18,
-  "passed": 18,
+  "version": "0.1.8",
+  "timestamp": "2026-06-06T08:56:30.204215",
+  "total_files": 1,
+  "passed": 0,
   "failed": 0,
-  "total_issues": 1138,
+  "total_issues": 0,
   "output_dir": "/Users/scc/code/zigcode/OmniScope/outputs/realworld"
 }

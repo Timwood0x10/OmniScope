@@ -1,6 +1,6 @@
 const std = @import("std");
 const types = @import("types.zig");
-const ptr_types = @import("../pass/analysis/ptr_lifetime_types.zig");
+const ptr_types = @import("../pass/analysis/ptr_lifetime/ptr_lifetime_types.zig");
 
 pub const layer2_functions = [_]types.FunctionSemantics{
     // Ownership transfer patterns (existing)

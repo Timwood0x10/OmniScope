@@ -10,7 +10,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="$PROJECT_ROOT/zig-out/bin"
-# DC-C11 FIX: Use correct binary name (capital O as defined in build.zig)
+# Binary name matches build.zig executable name
 OMNISCOPE="$BUILD_DIR/OmniScope"
 
 TEST_IR_DIR="$PROJECT_ROOT/tests/ir"
@@ -64,7 +64,18 @@ compile_to_bc() {
             ;;
         go)
             if command -v go &>/dev/null && command -v llvm-as &>/dev/null; then
-                go tool compile -S "$src_file" 2>/dev/null | llvm-as -o "$out_file" 2>/dev/null || true
+                # Go's -S outputs Plan9 assembly, not LLVM IR.
+                # Correct approach: compile to object, then extract via LLVM tools.
+                local go_obj="${out_file%.bc}.o"
+                go tool compile -o "$go_obj" "$src_file" 2>/dev/null || true
+                if [ -f "$go_obj" ]; then
+                    llvm-dis -o "${out_file%.bc}.ll" "$go_obj" 2>/dev/null || true
+                    if [ -f "${out_file%.bc}.ll" ]; then
+                        llvm-as -o "$out_file" "${out_file%.bc}.ll" 2>/dev/null || true
+                        rm -f "${out_file%.bc}.ll"
+                    fi
+                    rm -f "$go_obj"
+                fi
             fi
             ;;
         zig)

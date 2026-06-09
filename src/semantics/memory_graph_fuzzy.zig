@@ -40,7 +40,11 @@ pub const FuzzyMatcher = struct {
         if (endsWithLower(fn_name, "free") or
             endsWithLower(fn_name, "_free") or
             endsWithLower(fn_name, "dealloc") or
-            indexOfLower(fn_name, "dealloc") != null)
+            indexOfLower(fn_name, "dealloc") != null or
+            endsWithLower(fn_name, "_drop") or
+            endsWithLower(fn_name, "_release") or
+            endsWithLower(fn_name, "drop") or
+            endsWithLower(fn_name, "release"))
         {
             return .free;
         }

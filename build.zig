@@ -62,6 +62,22 @@ pub fn build(b: *std.Build) void {
 
     lib_mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
 
+    // Link C++ bridge for direct LLVM IR parsing (llvm::parseIRFile)
+    // Replaces the external llvm-as dependency that fails in macOS sandbox.
+    // Added to lib_mod so all test targets that import OmniScope get it.
+    lib_mod.addCSourceFile(.{ .file = b.path("src/ir/llvm_cpp_bridge.cpp"), .flags = &.{ "-std=c++17", "-fno-exceptions", "-fno-rtti" } });
+
+    // Cross-platform C++ standard library linking
+    const cxxlib: []const u8 = switch (target.result.os.tag) {
+        .macos, .ios, .tvos, .watchos => "c++",
+        .linux, .freebsd, .openbsd, .netbsd => "stdc++",
+        .windows => "", // MSVC links automatically
+        else => "c++",
+    };
+    if (cxxlib.len > 0) {
+        lib_mod.linkSystemLibrary(cxxlib, .{});
+    }
+
     // Build main executable
     const exe = b.addExecutable(.{
         .name = "OmniScope",
@@ -280,6 +296,63 @@ pub fn build(b: *std.Build) void {
     run_e2e_tests.step.dependOn(b.getInstallStep());
     e2e_test_step.dependOn(&run_e2e_tests.step);
 
+    // Rust FFI inline IR tests step
+    const rust_ffi_test_step = b.step("test-rust-ffi", "Run Rust FFI + noise inline IR tests");
+    const rust_ffi_test_mod = b.addModule("rust_ffi_test", .{
+        .root_source_file = b.path("tests/rust_ffi_inline_ir_test.zig"),
+        .target = target,
+    });
+    rust_ffi_test_mod.addImport("OmniScope", lib_mod);
+    rust_ffi_test_mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    const rust_ffi_tests = b.addTest(.{
+        .root_module = rust_ffi_test_mod,
+    });
+    configureLLVM(b, rust_ffi_tests, llvm_path, llvm_version);
+    if (enable_lto) {
+        rust_ffi_tests.want_lto = true;
+    }
+    const run_rust_ffi_tests = b.addRunArtifact(rust_ffi_tests);
+    run_rust_ffi_tests.step.dependOn(b.getInstallStep());
+    rust_ffi_test_step.dependOn(&run_rust_ffi_tests.step);
+
+    // Go/Python/Java FFI inline IR tests step
+    const gopyjava_test_step = b.step("test-gopyjava-ffi", "Run Go/Python/Java FFI inline IR tests");
+    const gopyjava_test_mod = b.addModule("gopyjava_test", .{
+        .root_source_file = b.path("tests/gopyjava_ffi_inline_ir_test.zig"),
+        .target = target,
+    });
+    gopyjava_test_mod.addImport("OmniScope", lib_mod);
+    gopyjava_test_mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    const gopyjava_tests = b.addTest(.{
+        .root_module = gopyjava_test_mod,
+    });
+    configureLLVM(b, gopyjava_tests, llvm_path, llvm_version);
+    if (enable_lto) {
+        gopyjava_tests.want_lto = true;
+    }
+    const run_gopyjava_tests = b.addRunArtifact(gopyjava_tests);
+    run_gopyjava_tests.step.dependOn(b.getInstallStep());
+    gopyjava_test_step.dependOn(&run_gopyjava_tests.step);
+
+    // C#/C++/Zig FFI inline IR tests step
+    const cscpp_ffi_test_step = b.step("test-cscpp-ffi", "Run C#/C++/Zig FFI inline IR tests");
+    const cscpp_ffi_test_mod = b.addModule("cscpp_ffi_test", .{
+        .root_source_file = b.path("tests/cscpp_ffi_inline_ir_test.zig"),
+        .target = target,
+    });
+    cscpp_ffi_test_mod.addImport("OmniScope", lib_mod);
+    cscpp_ffi_test_mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    const cscpp_ffi_tests = b.addTest(.{
+        .root_module = cscpp_ffi_test_mod,
+    });
+    configureLLVM(b, cscpp_ffi_tests, llvm_path, llvm_version);
+    if (enable_lto) {
+        cscpp_ffi_tests.want_lto = true;
+    }
+    const run_cscpp_ffi_tests = b.addRunArtifact(cscpp_ffi_tests);
+    run_cscpp_ffi_tests.step.dependOn(b.getInstallStep());
+    cscpp_ffi_test_step.dependOn(&run_cscpp_ffi_tests.step);
+
     // Benchmark performance tests step
     const bench_test_step = b.step("test-benchmark", "Run performance benchmark tests (latency, memory, throughput)");
     const bench_test_mod = b.addModule("bench_test", .{
@@ -292,6 +365,180 @@ pub fn build(b: *std.Build) void {
     });
     const run_bench_perf_tests = b.addRunArtifact(bench_perf_tests);
     bench_test_step.dependOn(&run_bench_perf_tests.step);
+
+    // Semantic resolution tests step
+    const semantic_resolution_test_step = b.step("test-semantic", "Run semantic resolution tests");
+    const semantic_resolution_test_mod = b.addModule("semantic_resolution_test", .{
+        .root_source_file = b.path("tests/semantic_resolution_test.zig"),
+        .target = target,
+    });
+    semantic_resolution_test_mod.addImport("OmniScope", lib_mod);
+    const semantic_resolution_tests = b.addTest(.{
+        .root_module = semantic_resolution_test_mod,
+    });
+    const run_semantic_resolution_tests = b.addRunArtifact(semantic_resolution_tests);
+    semantic_resolution_test_step.dependOn(&run_semantic_resolution_tests.step);
+    test_step.dependOn(&run_semantic_resolution_tests.step);
+
+    // Into-Raw Gate tests step
+    const into_raw_gate_test_step = b.step("test-into-raw-gate", "Run into_raw gate tests");
+    const into_raw_gate_test_mod = b.addModule("into_raw_gate_test", .{
+        .root_source_file = b.path("tests/into_raw_gate_test.zig"),
+        .target = target,
+    });
+    into_raw_gate_test_mod.addImport("OmniScope", lib_mod);
+    const into_raw_gate_tests = b.addTest(.{
+        .root_module = into_raw_gate_test_mod,
+    });
+    const run_into_raw_gate_tests = b.addRunArtifact(into_raw_gate_tests);
+    into_raw_gate_test_step.dependOn(&run_into_raw_gate_tests.step);
+    test_step.dependOn(&run_into_raw_gate_tests.step);
+
+    // P0 Regression tests step
+    const p0_regression_test_step = b.step("test-p0-regression", "Run P0 critical regression tests");
+    const p0_regression_mod = b.addModule("p0_regression", .{
+        .root_source_file = b.path("tests/unit/p0_regression.zig"),
+        .target = target,
+    });
+    p0_regression_mod.addImport("OmniScope", lib_mod);
+    const p0_regression_tests = b.addTest(.{
+        .root_module = p0_regression_mod,
+    });
+    const run_p0_regression_tests = b.addRunArtifact(p0_regression_tests);
+    p0_regression_test_step.dependOn(&run_p0_regression_tests.step);
+    test_step.dependOn(&run_p0_regression_tests.step);
+
+    // P1 Regression tests step
+    const p1_regression_test_step = b.step("test-p1-regression", "Run P1 high priority regression tests");
+    const p1_regression_mod = b.addModule("p1_regression", .{
+        .root_source_file = b.path("tests/unit/p1_regression.zig"),
+        .target = target,
+    });
+    p1_regression_mod.addImport("OmniScope", lib_mod);
+    const p1_regression_tests = b.addTest(.{
+        .root_module = p1_regression_mod,
+    });
+    const run_p1_regression_tests = b.addRunArtifact(p1_regression_tests);
+    p1_regression_test_step.dependOn(&run_p1_regression_tests.step);
+    test_step.dependOn(&run_p1_regression_tests.step);
+
+    // P2 Enhancement tests step
+    const p2_enhancement_test_step = b.step("test-p2-enhancement", "Run P2 enhancement tests");
+    const p2_enhancement_mod = b.addModule("p2_enhancement", .{
+        .root_source_file = b.path("tests/unit/p2_enhancement.zig"),
+        .target = target,
+    });
+    p2_enhancement_mod.addImport("OmniScope", lib_mod);
+    const p2_enhancement_tests = b.addTest(.{
+        .root_module = p2_enhancement_mod,
+    });
+    const run_p2_enhancement_tests = b.addRunArtifact(p2_enhancement_tests);
+    p2_enhancement_test_step.dependOn(&run_p2_enhancement_tests.step);
+    test_step.dependOn(&run_p2_enhancement_tests.step);
+
+    // Boundary conditions tests step
+    const boundary_test_step = b.step("test-boundary", "Run boundary conditions and edge case tests");
+    const boundary_mod = b.addModule("boundary_conditions", .{
+        .root_source_file = b.path("tests/unit/boundary_conditions.zig"),
+        .target = target,
+    });
+    boundary_mod.addImport("OmniScope", lib_mod);
+    const boundary_tests = b.addTest(.{
+        .root_module = boundary_mod,
+    });
+    const run_boundary_tests = b.addRunArtifact(boundary_tests);
+    boundary_test_step.dependOn(&run_boundary_tests.step);
+    test_step.dependOn(&run_boundary_tests.step);
+
+    // Issue Suppression tests step (refactored from issue_suppression.zig)
+    const issue_suppression_test_step = b.step("test-issue-suppression", "Run issue suppression pattern and safety guard tests");
+    const issue_suppression_test_mod = b.addModule("issue_suppression_test", .{
+        .root_source_file = b.path("tests/unit/issue_suppression_test.zig"),
+        .target = target,
+    });
+    issue_suppression_test_mod.addImport("OmniScope", lib_mod);
+    const issue_suppression_tests = b.addTest(.{
+        .root_module = issue_suppression_test_mod,
+    });
+    const run_issue_suppression_tests = b.addRunArtifact(issue_suppression_tests);
+    issue_suppression_test_step.dependOn(&run_issue_suppression_tests.step);
+    test_step.dependOn(&run_issue_suppression_tests.step);
+
+    // P1 critical fix tests step (UAF Tier 2 + Three-tier safety classification)
+    const p1_critical_fix_test_step = b.step("test-p1-critical-fix", "Run P1 critical fix tests (UAF Tier 2 + Three-tier safety)");
+    const p1_critical_fix_mod = b.addModule("p1_critical_fix", .{
+        .root_source_file = b.path("tests/p1_critical_fix_test.zig"),
+        .target = target,
+    });
+    p1_critical_fix_mod.addImport("OmniScope", lib_mod);
+    const p1_critical_fix_tests = b.addTest(.{
+        .root_module = p1_critical_fix_mod,
+    });
+    const run_p1_critical_fix_tests = b.addRunArtifact(p1_critical_fix_tests);
+    p1_critical_fix_test_step.dependOn(&run_p1_critical_fix_tests.step);
+    test_step.dependOn(&run_p1_critical_fix_tests.step);
+
+    // Inline IR Matrix tests step — covers all 8 languages × scenarios
+    const inline_ir_matrix_step = b.step("test-inline-ir-matrix", "Run inline IR test matrix (all languages × scenarios)");
+    const inline_ir_matrix_mod = b.addModule("inline_ir_matrix", .{
+        .root_source_file = b.path("tests/integration/inline_ir_matrix.zig"),
+        .target = target,
+    });
+    inline_ir_matrix_mod.addImport("OmniScope", lib_mod);
+    inline_ir_matrix_mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    const inline_ir_matrix_tests = b.addTest(.{
+        .root_module = inline_ir_matrix_mod,
+    });
+    configureLLVM(b, inline_ir_matrix_tests, llvm_path, llvm_version);
+    if (enable_lto) {
+        inline_ir_matrix_tests.want_lto = true;
+    }
+    const run_inline_ir_matrix_tests = b.addRunArtifact(inline_ir_matrix_tests);
+    run_inline_ir_matrix_tests.step.dependOn(b.getInstallStep());
+    inline_ir_matrix_step.dependOn(&run_inline_ir_matrix_tests.step);
+    test_step.dependOn(&run_inline_ir_matrix_tests.step);
+
+    // ── FFI Layout Mismatch Tests ──
+    const ffi_layout_step = b.step("test-ffi-layout", "Run FFI layout mismatch detection tests");
+    const ffi_layout_mod = b.addModule("test_ffi_layout", .{
+        .root_source_file = b.path("tests/integration/test_ffi_layout.zig"),
+        .target = target,
+    });
+    ffi_layout_mod.addImport("OmniScope", lib_mod);
+    ffi_layout_mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    const ffi_layout_tests = b.addTest(.{ .root_module = ffi_layout_mod });
+    configureLLVM(b, ffi_layout_tests, llvm_path, llvm_version);
+    const run_ffi_layout_tests = b.addRunArtifact(ffi_layout_tests);
+    run_ffi_layout_tests.step.dependOn(b.getInstallStep());
+    ffi_layout_step.dependOn(&run_ffi_layout_tests.step);
+
+    // ── FFI String Safety Tests ──
+    const ffi_string_step = b.step("test-ffi-string", "Run FFI string safety detection tests");
+    const ffi_string_mod = b.addModule("test_ffi_string", .{
+        .root_source_file = b.path("tests/integration/test_ffi_string.zig"),
+        .target = target,
+    });
+    ffi_string_mod.addImport("OmniScope", lib_mod);
+    ffi_string_mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    const ffi_string_tests = b.addTest(.{ .root_module = ffi_string_mod });
+    configureLLVM(b, ffi_string_tests, llvm_path, llvm_version);
+    const run_ffi_string_tests = b.addRunArtifact(ffi_string_tests);
+    run_ffi_string_tests.step.dependOn(b.getInstallStep());
+    ffi_string_step.dependOn(&run_ffi_string_tests.step);
+
+    // ── FFI Unwind Boundary Tests ──
+    const ffi_unwind_step = b.step("test-ffi-unwind", "Run FFI unwind boundary detection tests");
+    const ffi_unwind_mod = b.addModule("test_ffi_unwind", .{
+        .root_source_file = b.path("tests/integration/test_ffi_unwind.zig"),
+        .target = target,
+    });
+    ffi_unwind_mod.addImport("OmniScope", lib_mod);
+    ffi_unwind_mod.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
+    const ffi_unwind_tests = b.addTest(.{ .root_module = ffi_unwind_mod });
+    configureLLVM(b, ffi_unwind_tests, llvm_path, llvm_version);
+    const run_ffi_unwind_tests = b.addRunArtifact(ffi_unwind_tests);
+    run_ffi_unwind_tests.step.dependOn(b.getInstallStep());
+    ffi_unwind_step.dependOn(&run_ffi_unwind_tests.step);
 
     // Help information
     const help_step = b.step("help", "Show build options");

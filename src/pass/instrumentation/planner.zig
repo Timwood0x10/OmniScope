@@ -713,7 +713,24 @@ test "InstrumentationPlan - selection with budget" {
     var query_engine = @import("../../query/engine.zig").QueryEngine.init(&fact_store, std.testing.allocator);
     var data_flow_graph = try @import("../../dataflow/graph.zig").DataFlowGraph.init(std.testing.allocator, &fact_store, &query_engine);
     defer data_flow_graph.deinit();
-    var ctx = try PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph);
+
+    // Create minimal IR store for PassContext
+    const ir_mod = @import("../../../ir/ir_store.zig");
+    var ir_store = ir_mod.ModuleIRStore{
+        .allocator = std.testing.allocator,
+        .functions = std.StringHashMap(*ir_mod.FunctionIR).init(std.testing.allocator),
+        .function_list = &[_]*ir_mod.FunctionIR{},
+        .globals = &.{},
+        .global_names = std.StringHashMap(usize).init(std.testing.allocator),
+        .function_count = 0,
+        .total_instruction_count = 0,
+    };
+    defer {
+        ir_store.functions.deinit();
+        ir_store.global_names.deinit();
+    }
+
+    var ctx = try PassContext.init(std.testing.allocator, null, &fact_store, &query_engine, &data_flow_graph, &ir_store);
     defer ctx.deinit();
     var diag = DiagnosticWriter.init(std.testing.allocator);
     defer diag.deinit();

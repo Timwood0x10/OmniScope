@@ -1,0 +1,177 @@
+{
+  "language": "java",
+  "version": "1.0",
+  "description": "Java/JDK FFI boundary patterns - JNI, Panama FFM, Unsafe memory access (ref: JDK_IR_SPEC.md)",
+  "functions": [
+    {
+      "pattern": "Java_",
+      "match_type": "prefix",
+      "kind": "jni_native",
+      "severity": "high",
+      "consumes_ownership": false,
+      "transfers_ownership": true,
+      "requires_null_check": false,
+      "requires_taint_check": false,
+      "description": "JNI native method - Java calls C/C++ function (IR spec \u00a71.1: Java_<class>_<method> mangling)"
+    },
+    {
+      "pattern": "JNI_",
+      "match_type": "prefix",
+      "kind": "jni_utility",
+      "severity": "medium",
+      "consumes_ownership": false,
+      "transfers_ownership": false,
+      "requires_null_check": false,
+      "requires_taint_check": false,
+      "description": "JNI utility function - JNI bridge helper"
+    },
+    {
+      "pattern": "_downcall_stub_",
+      "match_type": "prefix",
+      "kind": "panama_ffm",
+      "severity": "high",
+      "consumes_ownership": false,
+      "transfers_ownership": true,
+      "requires_null_check": true,
+      "requires_taint_check": false,
+      "description": "Panama FFM downcall stub - Java-to-native call (IR spec \u00a77.2: DowncallLinker)"
+    },
+    {
+      "pattern": "_upcall_stub_",
+      "match_type": "prefix",
+      "kind": "panama_ffm",
+      "severity": "high",
+      "consumes_ownership": false,
+      "transfers_ownership": false,
+      "requires_null_check": false,
+      "requires_taint_check": false,
+      "description": "Panama FFM upcall stub - native-to-Java callback (IR spec \u00a77.2: UpcallLinker)"
+    }
+  ],
+  "jni_type_mapping": {
+    "Z": "jboolean (uint8_t)",
+    "B": "jbyte (int8_t)",
+    "C": "jchar (uint16_t)",
+    "S": "jshort (int16_t)",
+    "I": "jint (int32_t)",
+    "J": "jlong (int64_t)",
+    "F": "jfloat",
+    "D": "jdouble",
+    "L": "jobject (opaque handle)",
+    "[B": "jbyteArray"
+  },
+  "noise_prefixes": [
+    "JVM_",
+    "java_lang_Object",
+    "java_lang_String",
+    "java_lang_Class",
+    "jdk_internal_misc_",
+    "sun_misc_Unsafe",
+    "JVM_Register"
+  ],
+  "ffi_boundary_patterns": [
+    "Java_",
+    "JNI_",
+    "_downcall_stub_",
+    "_upcall_stub_",
+    "copyMemory0",
+    "setMemory0",
+    "allocateInstance",
+    "JVM_RegisterJDKInternalMiscUnsafeMethods",
+    "JVM_RegisterMethodHandleMethods"
+  ],
+  "unsafe_memory_patterns": [
+    "_getReference",
+    "_getInt",
+    "_putReference",
+    "_putInt",
+    "_getReferenceVolatile",
+    "_getIntVolatile",
+    "_putReferenceVolatile",
+    "_putIntVolatile",
+    "_getReferenceOpaque",
+    "_getIntOpaque",
+    "_putReferenceOpaque",
+    "_putIntOpaque",
+    "_getReferenceAcquire",
+    "_putReferenceRelease",
+    "_compareAndSetReference",
+    "_compareAndExchangeReference",
+    "_compareAndSetInt",
+    "_copyMemory0",
+    "_setMemory0",
+    "_allocateInstance",
+    "_allocateUninitializedArray"
+  ],
+  "stdlib_prefixes": [
+    "JVM_",
+    "java_lang_",
+    "jdk_internal_misc_Unsafe",
+    "sun_misc_"
+  ],
+  "compiler_reserved": [
+    "JVM_I2D",
+    "JVM_F2I",
+    "JVM_D2L",
+    "JVM_L2D",
+    "JVM_ArrayCopy",
+    "JVM_CurrentThread",
+    "JVM_GetArrayLength",
+    "Shenandoah",
+    "MemBar",
+    "Opaque1",
+    "OpaqueLoopInit",
+    "OpaqueLoopStride"
+  ],
+  "runtime_reserved": [
+    "JVM_FindClassFromCaller",
+    "JVM_GetCallerClass",
+    "JVM_CurrentThread",
+    "JVM_ArrayCopy",
+    "JVM_GetArrayLength",
+    "JVM_NewArray",
+    "JVM_NewMultiArray",
+    "JVM_GetComponentType",
+    "MemBarAcquire",
+    "MemBarRelease",
+    "MemBarVolatile",
+    "MemBarCPUOrder"
+  ],
+  "fp_suppression": [
+    {
+      "pattern": "JVM_",
+      "match_type": "prefix",
+      "reason": "JVM runtime - compiler infrastructure (IR SPEC \u00a78)"
+    },
+    {
+      "pattern": "java_lang_",
+      "match_type": "prefix",
+      "reason": "Java lang native - standard library (IR SPEC \u00a78)"
+    },
+    {
+      "pattern": "jdk_internal_misc_Unsafe",
+      "match_type": "prefix",
+      "reason": "JDK Unsafe internals (IR SPEC \u00a78)"
+    },
+    {
+      "pattern": "sun_misc_",
+      "match_type": "prefix",
+      "reason": "Legacy sun.misc (IR SPEC \u00a78)"
+    },
+    {
+      "pattern": "MemBar",
+      "match_type": "prefix",
+      "reason": "Memory barrier node - compiler infrastructure (IR SPEC \u00a78)"
+    },
+    {
+      "pattern": "Shenandoah",
+      "match_type": "prefix",
+      "reason": "Shenandoah GC barrier - compiler infrastructure (IR SPEC \u00a78)"
+    },
+    {
+      "pattern": "Opaque",
+      "match_type": "prefix",
+      "reason": "Opaque node - compiler optimization control (IR SPEC \u00a78)"
+    }
+  ]
+}

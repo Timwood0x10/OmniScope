@@ -21,7 +21,7 @@ FAIL_COUNT=0
 log_info() { echo -e "${BLUE}[TEST]${NC} $*"; }
 log_pass() { echo -e "${GREEN}[PASS]${NC} $*"; PASS_COUNT=$((PASS_COUNT + 1)); }
 log_fail() { echo -e "${RED}[FAIL]${NC} $*"; FAIL_COUNT=$((FAIL_COUNT + 1)); }
-# DC-C12 FIX: Add missing log_skip and log_warn functions
+# Helper functions for logging
 log_skip() { echo -e "${YELLOW}[SKIP]${NC} $*"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 
@@ -104,7 +104,7 @@ test_e2e() {
     for ir_file in "${test_files[@]}"; do
         if [ -f "$ir_file" ]; then
             local output="/tmp/e2e_output_$(basename "$ir_file").json"
-            if ./zig-out/bin/OmniScope "$ir_file" 2>/dev/null; then
+            if ./zig-out/bin/OmniScope "$ir_file" -o "$output" 2>/dev/null; then
                 if [ -f "$output" ] && [ -s "$output" ]; then
                     pipeline_passed=$((pipeline_passed + 1))
                 fi

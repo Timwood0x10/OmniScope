@@ -7,9 +7,21 @@
 //! - Track pointer origins (from_malloc, from_param, from_global, unknown)
 //! - Check free() calls for valid origins
 //! - Report violations with traceable reasoning
+//!
+//! Sub-modules:
+//!   - free_validation_safety.zig  — Pure predicates for function name checks
+//!   - free_validation_origin.zig — Pointer origin tracking state machine
+//!   - free_validation_mg.zig     — MemoryGraph-based 6-layer validation pipeline
+//!   - free_validation_contract.zig — FFIContractDB alloc/free pair validation
+//!   - free_validation_report.zig — Issue report constructors
 
 const std = @import("std");
+const log = std.log.scoped(.free_validation);
 const c = @import("../../../ir/llvm_raw.zig").c;
+const llvm_safe = @import("../../../ir/llvm_safe.zig");
+const ir_store_mod = @import("../../../ir/ir_store.zig");
+const ModuleIRStore = ir_store_mod.ModuleIRStore;
+const FunctionIR = ir_store_mod.FunctionIR;
 
 const PassContext = @import("../../pass.zig").PassContext;
 const PassKind = @import("../../pass.zig").PassKind;
@@ -20,24 +32,29 @@ const Issue = @import("../../../diag/issue.zig").Issue;
 const IssueKind = @import("../../../diag/issue.zig").IssueKind;
 const Severity = @import("../../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
-const ValueOrigin = @import("../ffi_semantics.zig").ValueOrigin;
+const ValueOrigin = @import("../ffi/ffi_semantics.zig").ValueOrigin;
 const noise_filter = @import("../../../semantics/noise_filter.zig");
 const DebugInfoUtils = @import("../../../ir/debug_info.zig").DebugInfoUtils;
-const ffi_utils = @import("../ffi_utils.zig");
-const ptr_types = @import("../ptr_lifetime_types.zig");
-const classify = @import("../ptr_lifetime_classify.zig");
+const cross_lang_detector = @import("cross_lang_free_detector.zig");
+const ptr_utils = @import("../ptr_lifetime/ptr_lifetime_utils.zig");
+const isIntentionalOwnershipTransfer = ptr_utils.isIntentionalOwnershipTransfer;
+
+// Sub-module imports
+const safety = @import("free_validation_safety.zig");
+const origin = @import("free_validation_origin.zig");
+const mg = @import("free_validation_mg.zig");
+const contract = @import("free_validation_contract.zig");
+const report = @import("free_validation_report.zig");
 
 /// Memory deallocation functions — basic memory deallocators for free validation.
-/// NOTE: This is distinct from ptr_types.KNOWN_DEALLOCATORS.free_functions which
-/// covers library-specific cleanup (sqlite3_free, curl_easy_cleanup, etc.).
-pub const FREE_FUNCTIONS = &[_][]const u8{
-    "free",           "dealloc",       "deallocate",   "operator delete", "operator delete[]",
-    // Rust global deallocator intrinsics (substring-matched via isFreeFunction)
-    "__rust_dealloc", "__rdl_dealloc", "__rg_dealloc",
-};
+// TODO: Reference from @import("../../../types/function_catalogs.zig") once that module
+// is created, to consolidate duplicate constant definitions across the codebase.
+pub const FREE_FUNCTIONS = safety.FREE_FUNCTIONS;
 
 /// Memory allocation functions — delegated to ptr_types (single source of truth).
-pub const ALLOC_FUNCTIONS = ptr_types.HEAP_ALLOC_FUNCTIONS;
+// TODO: Reference from @import("../../../types/function_catalogs.zig") once that module
+// is created, to consolidate duplicate constant definitions across the codebase.
+pub const ALLOC_FUNCTIONS = safety.ALLOC_FUNCTIONS;
 
 /// Free validation detection pass
 ///
@@ -50,22 +67,17 @@ pub const FreeValidationPass = struct {
 
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
         if (ctx.module == null) return;
-        // Runtime dependency validation: danger_surface must have populated relevant set.
-        // If empty, DangerSurfacePass didn't run or found nothing — skip to avoid false positives.
-        if (ctx.danger_surface_relevant.count() == 0) return;
 
-        const mod = ctx.module.?.raw;
-        var func = c.LLVMGetFirstFunction(mod);
-        if (@intFromPtr(func) == 0) return;
+        const ir_store = ctx.ir_store;
+        if (ir_store.function_list.len == 0) return;
+
+        const has_danger_surface = ctx.danger_surface_relevant.count() > 0;
 
         var issue_count: usize = 0;
-        while (@intFromPtr(func) != 0) : (func = c.LLVMGetNextFunction(func)) {
-            if (!ctx.isRelevantFunction(@as(u64, @intFromPtr(func)))) continue;
-            // Function-level error isolation
-            const count = analyzeFunction(ctx, func, diag) catch |err| {
-                const func_name_raw = c.LLVMGetValueName(func);
-                const func_name = if (func_name_raw != null) std.mem.span(func_name_raw) else "unknown";
-                diag.warn("FreeValidation: skipped function due to error: {} ({s})", .{ err, func_name });
+        for (ir_store.function_list) |fir| {
+            if (has_danger_surface and !ctx.isRelevantFunction(@as(u64, @intFromPtr(fir.func)))) continue;
+            const count = analyzeFunction(ctx, fir, diag, has_danger_surface) catch |err| {
+                diag.warn("FreeValidation: skipped function due to error: {} ({s})", .{ err, fir.name });
                 ctx.recordDegradedFunction();
                 continue;
             };
@@ -79,21 +91,17 @@ pub const FreeValidationPass = struct {
         }
     }
 
-    fn analyzeFunction(ctx: *PassContext, func: c.LLVMValueRef, diag: *DiagnosticWriter) !usize {
+    fn analyzeFunction(ctx: *PassContext, fir: *const FunctionIR, diag: *DiagnosticWriter, has_danger_surface: bool) !usize {
         var issue_count: usize = 0;
+        const func = fir.func;
 
-        // INTEGRATION: Three-layer noise filter (name + path)
-        const func_name_ptr = c.LLVMGetValueName(func);
-        if (@intFromPtr(func_name_ptr) == 0) return 0;
-        const func_name = std.mem.span(func_name_ptr);
+        const func_name = fir.name;
         const func_loc = DebugInfoUtils.getFunctionLocation(func);
-        const classification = noise_filter.classifyFunctionFull(func_name, null, func_loc, null);
+        const classification = ctx.classifyFunctionSurface(func_name, func_loc);
         if (!classification.origin.shouldReportByDefault()) return 0;
 
-        // Track pointer origins within this function
-        var pointer_origins = std.AutoHashMap(c.LLVMValueRef, PointerInfo).init(ctx.allocator);
+        var pointer_origins = std.AutoHashMap(c.LLVMValueRef, origin.PointerInfo).init(ctx.allocator);
         defer {
-            // Free all allocated source_desc strings
             var iter = pointer_origins.iterator();
             while (iter.next()) |entry| {
                 ctx.allocator.free(entry.value_ptr.source_desc);
@@ -108,7 +116,6 @@ pub const FreeValidationPass = struct {
             var param_index: u32 = 0;
             while (@intFromPtr(param) != 0) : (param = c.LLVMGetNextParam(param)) {
                 const desc = try std.fmt.allocPrint(ctx.allocator, "from parameter {d} in {s}", .{ param_index, func_name });
-                // Use getOrPut to check if key exists and free old desc if needed
                 const gop = try pointer_origins.getOrPut(param);
                 if (gop.found_existing) {
                     ctx.allocator.free(gop.value_ptr.source_desc);
@@ -123,199 +130,33 @@ pub const FreeValidationPass = struct {
         }
 
         // Second pass: track instruction pointer origins
-        var bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                try trackPointerOrigin(ctx.allocator, inst, &pointer_origins);
-            }
+        for (fir.instructions, 0..) |inst, idx| {
+            _ = idx;
+            try origin.trackPointerOrigin(ctx, inst, &pointer_origins);
         }
 
         // Third pass: check free calls
-        bb = c.LLVMGetFirstBasicBlock(func);
-        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
-            var inst = c.LLVMGetFirstInstruction(bb);
-            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
-                if (try checkFreeCall(ctx, inst, &pointer_origins, func, diag)) {
-                    issue_count += 1;
-                }
+        for (fir.instructions) |inst| {
+            if (try checkFreeCall(ctx, inst, &pointer_origins, func, diag, has_danger_surface)) {
+                issue_count += 1;
             }
         }
 
         return issue_count;
     }
 
-    /// Information about a pointer's origin
-    const PointerInfo = struct {
-        /// Origin of the pointer
-        origin: ValueOrigin,
-        /// Source instruction (if from allocation)
-        source_inst: ?c.LLVMValueRef,
-        /// Description for trace
-        source_desc: []const u8,
-    };
-
-    /// Track the origin of pointers
-    fn trackPointerOrigin(
-        allocator: std.mem.Allocator,
-        inst: c.LLVMValueRef,
-        pointer_origins: *std.AutoHashMap(c.LLVMValueRef, PointerInfo),
-    ) !void {
-        const opcode = c.LLVMGetInstructionOpcode(inst);
-
-        switch (opcode) {
-            // Allocation calls - mark as from_malloc
-            c.LLVMCall => {
-                const called = c.LLVMGetCalledValue(inst);
-                if (@intFromPtr(called) != 0) {
-                    const func_name_ptr = c.LLVMGetValueName(called);
-                    if (@intFromPtr(func_name_ptr) != 0) {
-                        const func_name = std.mem.span(func_name_ptr);
-
-                        if (isAllocFunction(func_name)) {
-                            const desc = try std.fmt.allocPrint(allocator, "from {s}()", .{func_name});
-                            const gop = try pointer_origins.getOrPut(inst);
-                            if (gop.found_existing) {
-                                allocator.free(gop.value_ptr.source_desc);
-                            }
-                            gop.value_ptr.* = .{
-                                .origin = .from_malloc,
-                                .source_inst = inst,
-                                .source_desc = desc,
-                            };
-                        } else if (isFFIBoundaryCall(func_name)) {
-                            // FFI boundary call returning a pointer — cross-allocator risk
-                            const desc = try std.fmt.allocPrint(allocator, "from FFI call {s}()", .{func_name});
-                            const gop = try pointer_origins.getOrPut(inst);
-                            if (gop.found_existing) {
-                                allocator.free(gop.value_ptr.source_desc);
-                            }
-                            gop.value_ptr.* = .{
-                                .origin = .from_ffi_call,
-                                .source_inst = inst,
-                                .source_desc = desc,
-                            };
-                        }
-                    }
-                }
-            },
-
-            // Load/Store - propagate origin (copy source_desc)
-            c.LLVMLoad => {
-                const ptr = c.LLVMGetOperand(inst, 0);
-                if (pointer_origins.get(ptr)) |info| {
-                    const desc = try allocator.dupe(u8, info.source_desc);
-                    const gop = try pointer_origins.getOrPut(inst);
-                    if (gop.found_existing) {
-                        allocator.free(gop.value_ptr.source_desc);
-                    }
-                    gop.value_ptr.* = .{
-                        .origin = info.origin,
-                        .source_inst = info.source_inst,
-                        .source_desc = desc,
-                    };
-                }
-            },
-
-            // GEP - propagate origin (copy source_desc)
-            c.LLVMGetElementPtr => {
-                const ptr = c.LLVMGetOperand(inst, 0);
-                if (pointer_origins.get(ptr)) |info| {
-                    const desc = try allocator.dupe(u8, info.source_desc);
-                    const gop = try pointer_origins.getOrPut(inst);
-                    if (gop.found_existing) {
-                        allocator.free(gop.value_ptr.source_desc);
-                    }
-                    gop.value_ptr.* = .{
-                        .origin = info.origin,
-                        .source_inst = info.source_inst,
-                        .source_desc = desc,
-                    };
-                }
-            },
-
-            // BitCast - propagate origin (copy source_desc)
-            c.LLVMBitCast => {
-                const ptr = c.LLVMGetOperand(inst, 0);
-                if (pointer_origins.get(ptr)) |info| {
-                    const desc = try allocator.dupe(u8, info.source_desc);
-                    const gop = try pointer_origins.getOrPut(inst);
-                    if (gop.found_existing) {
-                        allocator.free(gop.value_ptr.source_desc);
-                    }
-                    gop.value_ptr.* = .{
-                        .origin = info.origin,
-                        .source_inst = info.source_inst,
-                        .source_desc = desc,
-                    };
-                }
-            },
-
-            else => {},
-        }
-    }
-
-    /// Determine if a free/dealloc call is safe in its FFI context.
-    /// Centralizes Rust ownership model awareness: when Rust code uses
-    /// __rust_dealloc on a pointer from Box::into_raw(), it's intentional
-    /// ownership reclamation — not a bug.
-    ///
-    /// SECURITY POLICY (2026-05-05 tightened):
-    /// For C/C++: Established conventions allow broader trust (global statics, well-known wrappers).
-    /// For Rust/Zig: Stricter — these languages have ownership systems; if code bypasses them
-    /// via FFI, we require explicit safety proof (null checks, RAII, refcount), not assumptions.
-    fn isFreeSafe(free_func: []const u8, origin: ValueOrigin, source_desc: []const u8) bool {
-        // Rust dealloc on param: normal ownership transfer (caller owns → callee frees)
-        if (origin == .from_param and isRustDeallocFunction(free_func)) return true;
-        // into_raw + matching Rust dealloc: correct ownership reclamation
-        if (source_desc.len > 0 and isPossibleIntoRawOutput(source_desc) and isRustDeallocFunction(free_func)) return true;
-        // FFI-sourced pointer freed by known safe wrappers only.
-        // Previously exempted ALL non-Rust/non-standard frees (too broad — missed Rust FFI bugs).
-        // Now restricted to well-known language-specific deallocators:
-        //   - g_free (GLib/GObject) pairs with g_malloc/g_new
-        //   - CFRelease/CFAutorelease (CoreFoundation) pairs with Create/Copy
-        //   - PyObject_Free (Python C API) pairs with PyObject_Malloc
-        //   - cudaFree (CUDA runtime) pairs with cudaMalloc
-        //   - vkFreeMemory (Vulkan API) pairs with vkAllocateMemory
-        //   - ID3D12Device_Release (DirectX 12) pairs with CreateDevice
-        //   - Platform-specific: VirtualFree/HeapFree (Windows), munmap (POSIX)
-        //
-        // NOTE: .from_global origin is intentionally NOT auto-trusted here.
-        // Global pointers in Rust/Zig FFI context are suspicious — they may indicate
-        // a static that was allocated in one language and freed in another without
-        // proper coordination. Flag for manual review unless proven safe.
-        if (origin == .from_ffi_call and !isRustDeallocFunction(free_func) and
-            !std.mem.eql(u8, free_func, "free"))
-        {
-            const known_safe_wrappers = [_][]const u8{
-                "g_free",        "CFRelease",            "CFAutorelease",
-                "PyObject_Free", "PyMem_Free",           "cudaFree",
-                "vkFreeMemory",  "ID3D12Device_Release", "VirtualFree",
-                "HeapFree",      "munmap",               "mmap_free",
-                "objc_release",  "NSDeallocateObject",   "CoTaskMemFree",
-                "SysFreeString",
-            };
-            for (known_safe_wrappers) |wrapper| {
-                if (std.mem.eql(u8, free_func, wrapper)) return true;
-            }
-            // Default: do NOT exempt — flag as suspicious for manual review
-        }
-        // All other origins (.from_global, .unknown, etc.) default to unsafe.
-        // This is intentional: if we can't prove it's safe, flag it.
-        return false;
-    }
-
     /// Check if a free call is valid
     fn checkFreeCall(
         ctx: *PassContext,
         inst: c.LLVMValueRef,
-        pointer_origins: *const std.AutoHashMap(c.LLVMValueRef, PointerInfo),
+        pointer_origins: *const std.AutoHashMap(c.LLVMValueRef, origin.PointerInfo),
         caller_func: c.LLVMValueRef,
         diag: *DiagnosticWriter,
+        has_danger_surface: bool,
     ) !bool {
         const opcode = c.LLVMGetInstructionOpcode(inst);
 
-        if (opcode != c.LLVMCall) return false;
+        if (!llvm_safe.isCallOrInvoke(opcode)) return false;
 
         const called = c.LLVMGetCalledValue(inst);
         if (@intFromPtr(called) == 0) return false;
@@ -324,7 +165,7 @@ pub const FreeValidationPass = struct {
         if (@intFromPtr(callee_name_ptr) == 0) return false;
 
         const callee_name = std.mem.span(callee_name_ptr);
-        if (!isFreeFunction(callee_name)) return false;
+        if (!safety.isFreeFunction(callee_name)) return false;
 
         // Get the pointer being freed
         const ptr_arg = c.LLVMGetOperand(inst, 0);
@@ -332,263 +173,310 @@ pub const FreeValidationPass = struct {
 
         // Check origin
         const origin_info = pointer_origins.get(ptr_arg);
-        const origin = if (origin_info) |info| info.origin else .unknown;
+        const origin_val = if (origin_info) |info| info.origin else .unknown;
 
-        // Only report for clearly invalid origins (not unknown - may be cross-function alloc)
-        // unknown origin is skipped because allocation may have happened in another function
-        //
-        // ValueOrigin enum coverage (ffi_semantics.zig):
-        //   - .from_param / .from_global / .from_constant → invalid free (report)
-        //   - .from_malloc → valid (skip)
-        //   - .unknown → cross-function alloc (skip to avoid false positives)
-        //
-        // NOTE: This switch is exhaustive for all ValueOrigin variants.
-        // The Zig compiler will emit a compile error if new enum values are added
-        // without updating this switch, ensuring completeness at compile time.
-        switch (origin) {
+        // ── NEW: Cross-Language Free Detection (v0.2.0 enhancement) ──
+        if (origin_info) |info| {
+            const src_desc = info.source_desc;
+            const alloc_func_name = contract.extractAllocFuncNameForCrossLang(src_desc, info.alloc_func_name);
+            if (alloc_func_name) |alloc_func| {
+                log.debug("CROSS-LANG-CHECK: alloc={s}, free={s}", .{ alloc_func, callee_name });
+
+                const caller_name_ptr = c.LLVMGetValueName(caller_func);
+                const caller_name_str = if (@intFromPtr(caller_name_ptr) != 0) std.mem.span(caller_name_ptr) else "";
+                const intentional_caller_patterns = [_][]const u8{
+                    "into_raw", "ManuallyDrop", "forget",   "transfer_ownership",
+                    "handoff",  "ffi_export",   "c_export", "export_ptr",
+                    "donate",
+                };
+                var is_intentional = false;
+                for (intentional_caller_patterns) |pat| {
+                    if (std.mem.indexOf(u8, caller_name_str, pat) != null) {
+                        is_intentional = true;
+                        break;
+                    }
+                }
+
+                if (!is_intentional) {
+                    if (ctx.memory_graph.family_registry) |family_reg| {
+                        var cross_issue = try cross_lang_detector.detectCrossLanguageFree(family_reg, alloc_func, callee_name, ctx.allocator);
+                        if (cross_issue) |*ci| {
+                            try report.reportCrossLangFreeIssue(ctx, caller_func, callee_name, ptr_arg, ci, diag);
+                            // Ownership of ci.message transferred to Issue::initWithTrace → addIssue → deinit
+                            // or freed in early return above
+                            return true;
+                        }
+                    }
+                } else {
+                    log.debug("CROSS-LANG-CHECK: Intentional transfer in caller={s}, skipping", .{caller_name_str});
+                }
+            }
+        }
+
+        // ── FFI Contract Database Validation (source_desc-based) ──
+        if (origin_info) |info| {
+            if (try contract.validateWithContractDBFromSource(ctx, info.source_desc, callee_name, caller_func, inst, diag, info.alloc_func_name)) |result| {
+                return result;
+            }
+        }
+
+        // Only report for clearly invalid origins (not unknown)
+        switch (origin_val) {
             .from_param => {
                 const src = if (origin_info) |info| info.source_desc else "";
-                if (isFreeSafe(callee_name, origin, src)) return false;
-                try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
+                if (safety.isFreeSafe(callee_name, origin_val, src)) return false;
+
+                if (has_danger_surface) {
+                    if (try mg.validateFreeWithMemoryGraph(ctx, ptr_arg, callee_name, caller_func, diag)) |result| {
+                        return result;
+                    }
+                }
+
+                if (std.mem.eql(u8, callee_name, "free") or
+                    std.mem.startsWith(u8, callee_name, "operator delete"))
+                {
+                    return false;
+                }
+                try report.reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin_val, origin_info, diag);
                 return true;
             },
             .from_global, .from_constant => {
-                try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
+                try report.reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin_val, origin_info, diag);
                 return true;
             },
             .from_ffi_call => {
                 const src = if (origin_info) |info| info.source_desc else "";
-                if (isCrossAllocatorFree(.from_ffi_call, src, callee_name)) {
-                    try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
+                const alloc_fn = if (origin_info) |info| info.alloc_func_name else null;
+                if (safety.isCrossAllocatorFree(.from_ffi_call, src, callee_name, ctx.memory_graph.family_registry, alloc_fn)) {
+                    try report.reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin_val, origin_info, diag);
                     return true;
                 }
-                if (isFreeSafe(callee_name, origin, src)) return false;
-                try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
+                if (safety.isFreeSafe(callee_name, origin_val, src)) return false;
+
+                if (has_danger_surface) {
+                    if (try mg.validateFreeWithMemoryGraph(ctx, ptr_arg, callee_name, caller_func, diag)) |result| {
+                        return result;
+                    }
+                }
+
+                if (origin_info) |info| {
+                    const cross_src = info.source_desc;
+                    const alloc_is_cpp_new = std.mem.indexOf(u8, cross_src, "_Znwm") != null or
+                        std.mem.indexOf(u8, cross_src, "_Znam") != null or
+                        std.mem.indexOf(u8, cross_src, "operator new") != null;
+                    const free_is_c_free = std.mem.eql(u8, callee_name, "free");
+                    const alloc_is_c_malloc = std.mem.indexOf(u8, cross_src, "malloc") != null or
+                        std.mem.indexOf(u8, cross_src, "calloc") != null or
+                        std.mem.indexOf(u8, cross_src, "realloc") != null;
+                    const free_is_cpp_delete = std.mem.indexOf(u8, callee_name, "_ZdlPv") != null or
+                        std.mem.indexOf(u8, callee_name, "_ZdaPv") != null;
+
+                    if ((alloc_is_cpp_new and free_is_c_free) or
+                        (alloc_is_c_malloc and free_is_cpp_delete))
+                    {
+                        try report.reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin_val, origin_info, diag);
+                        return true;
+                    }
+                }
+
+                if (std.mem.eql(u8, callee_name, "free") or
+                    std.mem.eql(u8, callee_name, "kfree") or
+                    std.mem.eql(u8, callee_name, "g_free") or
+                    std.mem.eql(u8, callee_name, "zig_free") or
+                    std.mem.startsWith(u8, callee_name, "operator delete") or
+                    std.mem.indexOf(u8, callee_name, "_ZdlPv") != null or
+                    std.mem.indexOf(u8, callee_name, "_ZdaPv") != null or
+                    std.mem.indexOf(u8, callee_name, "_Zdl") != null or
+                    std.mem.indexOf(u8, callee_name, "_Zda") != null)
+                {
+                    return false;
+                }
+                try report.reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin_val, origin_info, diag);
                 return true;
             },
             .from_malloc => {
                 const src = if (origin_info) |info| info.source_desc else "";
-                if (isCrossAllocatorFree(.from_malloc, src, callee_name)) {
-                    try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
+                const alloc_fn = if (origin_info) |info| info.alloc_func_name else null;
+                if (safety.isCrossAllocatorFree(.from_malloc, src, callee_name, ctx.memory_graph.family_registry, alloc_fn)) {
+                    try report.reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin_val, origin_info, diag);
                     return true;
                 }
-                if (src.len > 0 and !isFreeSafe(callee_name, origin, src)) {
-                    try reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin, origin_info, diag);
+                if (safety.isFreeSafe(callee_name, origin_val, src)) return false;
+
+                if (has_danger_surface) {
+                    if (try mg.validateFreeWithMemoryGraph(ctx, ptr_arg, callee_name, caller_func, diag)) |result| {
+                        return result;
+                    }
+                }
+
+                if (origin_info) |info| {
+                    const cross_src = info.source_desc;
+                    const alloc_is_cpp_new = std.mem.indexOf(u8, cross_src, "_Znwm") != null or
+                        std.mem.indexOf(u8, cross_src, "_Znam") != null or
+                        std.mem.indexOf(u8, cross_src, "operator new") != null;
+                    const free_is_c_free = std.mem.eql(u8, callee_name, "free");
+                    const alloc_is_c_malloc = std.mem.indexOf(u8, cross_src, "malloc") != null or
+                        std.mem.indexOf(u8, cross_src, "calloc") != null or
+                        std.mem.indexOf(u8, cross_src, "realloc") != null;
+                    const free_is_cpp_delete = std.mem.indexOf(u8, callee_name, "_ZdlPv") != null or
+                        std.mem.indexOf(u8, callee_name, "_ZdaPv") != null;
+
+                    if ((alloc_is_cpp_new and free_is_c_free) or
+                        (alloc_is_c_malloc and free_is_cpp_delete))
+                    {
+                        try report.reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin_val, origin_info, diag);
+                        return true;
+                    }
+                }
+
+                if (std.mem.eql(u8, callee_name, "free") or
+                    std.mem.eql(u8, callee_name, "kfree") or
+                    std.mem.eql(u8, callee_name, "g_free") or
+                    std.mem.eql(u8, callee_name, "zig_free") or
+                    std.mem.startsWith(u8, callee_name, "operator delete") or
+                    std.mem.indexOf(u8, callee_name, "_ZdlPv") != null or
+                    std.mem.indexOf(u8, callee_name, "_ZdaPv") != null or
+                    std.mem.indexOf(u8, callee_name, "_Zdl") != null or
+                    std.mem.indexOf(u8, callee_name, "_Zda") != null)
+                {
+                    return false;
+                }
+                if (src.len > 0 and !safety.isFreeSafe(callee_name, origin_val, src)) {
+                    try report.reportInvalidFree(ctx, caller_func, callee_name, ptr_arg, origin_val, origin_info, diag);
                     return true;
                 }
+            },
+            .from_library_borrow => {
+                // ── Python borrowed ref over-release ──
+                if (safety.isPythonRelease(callee_name)) {
+                    const message = try std.fmt.allocPrint(
+                        ctx.allocator,
+                        "Python DECREF on borrowed reference: pointer from borrowed library function " ++
+                            "was passed to {s}. Borrowed references must not be DECREF'd by the caller " ++
+                            "(origin: {s}).",
+                        .{ callee_name, if (origin_info) |info| info.source_desc else "unknown" },
+                    );
+                    return try reportBorrowedRefIssue(
+                        ctx,
+                        caller_func,
+                        callee_name,
+                        origin_val,
+                        origin_info,
+                        message,
+                        "Python borrowed reference released via DECREF",
+                    );
+                }
+
+                // ── C free on Python internal memory ──
+                if (std.mem.eql(u8, callee_name, "free") or
+                    std.mem.eql(u8, callee_name, "kfree") or
+                    std.mem.eql(u8, callee_name, "g_free"))
+                {
+                    const message = try std.fmt.allocPrint(
+                        ctx.allocator,
+                        "C free on Python internal memory: pointer from borrowed library function " ++
+                            "was passed to {s}. Python internal memory must not be freed by the caller " ++
+                            "(origin: {s}).",
+                        .{ callee_name, if (origin_info) |info| info.source_desc else "unknown" },
+                    );
+                    return try reportBorrowedRefIssue(
+                        ctx,
+                        caller_func,
+                        callee_name,
+                        origin_val,
+                        origin_info,
+                        message,
+                        "Free called on Python internal memory",
+                    );
+                }
+
+                // ── General borrowed library reference handling ──
+                const message = try std.fmt.allocPrint(
+                    ctx.allocator,
+                    "Invalid free: pointer from borrowed library function was freed. " ++
+                        "Borrowed references must not be freed by the caller (origin: {s}).",
+                    .{if (origin_info) |info| info.source_desc else "unknown"},
+                );
+                return try reportBorrowedRefIssue(
+                    ctx,
+                    caller_func,
+                    callee_name,
+                    origin_val,
+                    origin_info,
+                    message,
+                    "Free called on borrowed library reference",
+                );
             },
             .unknown => {},
         }
 
         return false;
     }
-
-    /// Check if function is a Rust deallocation function.
-    /// Only matches actual Rust dealloc intrinsics (NOT general drop glue).
-    /// Drop glue includes destructors that don't necessarily deallocate memory.
-    fn isRustDeallocFunction(func_name: []const u8) bool {
-        const rust_dealloc_patterns = [_][]const u8{
-            "__rustc__rustc_dealloc",
-            "__rust_dealloc",
-        };
-        for (rust_dealloc_patterns) |p| {
-            if (std.mem.indexOf(u8, func_name, p) != null) return true;
-        }
-        return false;
-    }
-
-    /// Check if callee is an FFI boundary function (non-Rust-mangled name).
-    /// Used to detect pointers returned from C/external functions, which carry
-    /// cross-allocator free risk when passed to libc::free or __rust_dealloc.
-    ///
-    /// Future enhancement: use ctx.getCrossEdgeByCallee(callee) != null
-    /// to cover unmangled Rust wrappers (e.g., test_double_free_box).
-    /// Requires refactoring this fn to accept PassContext parameter.
-    fn isFFIBoundaryCall(func_name: []const u8) bool {
-        if (func_name.len < 2) return false;
-        // Rust-internal functions use _ZN / _RNv / _R mangled prefixes.
-        // LLVM intrinsics start with "llvm.".
-        // Anything else that doesn't start with these is likely an extern "C" FFI call.
-        const rust_prefixes = [_][]const u8{ "_ZN", "_RNv", "_R" };
-        for (rust_prefixes) |prefix| {
-            if (std.mem.startsWith(u8, func_name, prefix)) return false;
-        }
-        if (std.mem.startsWith(u8, func_name, "llvm.")) return false;
-        return true;
-    }
-
-    /// Check if a free call crosses allocator boundaries.
-    /// Returns true when memory from one runtime's allocator is freed
-    /// by a different runtime's deallocator — almost always a bug.
-    fn isCrossAllocatorFree(alloc_origin: ValueOrigin, source_desc: []const u8, free_func: []const u8) bool {
-        const is_rust_free = isRustDeallocFunction(free_func);
-        const is_c_free = std.mem.eql(u8, free_func, "free") or
-            std.mem.eql(u8, free_func, "kfree") or
-            std.mem.eql(u8, free_func, "g_free");
-
-        if (alloc_origin == .from_malloc) {
-            const is_rust_alloc = std.mem.indexOf(u8, source_desc, "__rust_alloc") != null or
-                std.mem.indexOf(u8, source_desc, "__rdl_alloc") != null or
-                std.mem.indexOf(u8, source_desc, "__rg_alloc") != null;
-            if (is_rust_alloc and is_c_free) return true;
-            if (!is_rust_alloc and is_rust_free) return true;
-        }
-
-        if (alloc_origin == .from_ffi_call) {
-            const is_rust_source = std.mem.indexOf(u8, source_desc, "__rust") != null or
-                std.mem.indexOf(u8, source_desc, "_ZN") != null;
-            if (is_rust_source and is_c_free) return true;
-        }
-
-        return false;
-    }
-
-    /// Check if the pointer may originate from Rust's into_raw() call.
-    /// into_raw transfers ownership to the caller — freeing with anything
-    /// other than the correct Rust deallocator is undefined behavior.
-    fn isPossibleIntoRawOutput(source_desc: []const u8) bool {
-        const into_raw_patterns = [_][]const u8{
-            "into_raw",      "into_raw_parts",
-            "Box::into_raw",
-        };
-        for (into_raw_patterns) |pat| {
-            if (std.mem.indexOf(u8, source_desc, pat) != null) return true;
-        }
-        return false;
-    }
-
-    /// Check if function is a free function.
-    /// Uses exact match + endsWith to avoid FP like 'my_custom_free' matching 'free'.
-    fn isFreeFunction(func_name: []const u8) bool {
-        return classify.isFreeFunction(func_name);
-    }
-
-    /// Check if function is an allocation function.
-    /// Uses exact match + endsWith to avoid FP like 'my_custom_allocator' matching 'alloc'.
-    fn isAllocFunction(func_name: []const u8) bool {
-        for (ALLOC_FUNCTIONS) |alloc_func| {
-            if (functionNameMatches(func_name, alloc_func)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /// Match strategy: exact equality OR suffix match.
-    /// Prevents substring FP (e.g., 'my_custom_free' ≠ 'free')
-    /// while still catching mangled names like '_ZN...freeEv'.
-    fn functionNameMatches(func_name: []const u8, pattern: []const u8) bool {
-        if (std.mem.eql(u8, func_name, pattern)) return true;
-        if (std.mem.endsWith(u8, func_name, pattern)) return true;
-        return false;
-    }
-
-    /// Report invalid free call
-    fn reportInvalidFree(
-        ctx: *PassContext,
-        caller_func: c.LLVMValueRef,
-        free_func_name: []const u8,
-        ptr_arg: c.LLVMValueRef,
-        origin: ValueOrigin,
-        origin_info: ?PointerInfo,
-        diag: *DiagnosticWriter,
-    ) !void {
-        const caller_name_ptr = c.LLVMGetValueName(caller_func);
-        const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
-            std.mem.span(caller_name_ptr)
-        else
-            "unknown";
-
-        const location = Location.init(caller_name);
-
-        // E2-2a: Alias closure severity upgrade — if the freed pointer reaches
-        // FFI boundaries through alias chains, this is a cross-language memory error.
-        const ptr_val: u64 = @intFromPtr(ptr_arg);
-        const reaches_ffi = ctx.isOnDangerPathFull(ptr_val);
-        const base_confidence: f32 = if (reaches_ffi) 0.85 else 0.75;
-        const severity: Severity = if (reaches_ffi) .critical else .high;
-
-        // Build trace for reasoning path
-        const trace = try ctx.allocator.alloc(TraceEntry, 3);
-        trace[0] = TraceEntry.init("Free called on non-heap pointer");
-        trace[1] = try createOriginTraceEntry(ctx.allocator, origin, origin_info);
-        trace[2] = try createFreeTraceEntry(ctx.allocator, free_func_name);
-
-        const origin_str = switch (origin) {
-            .from_param => "function parameter",
-            .from_global => "global variable",
-            .from_constant => "constant",
-            .unknown => "unknown source",
-            else => "non-heap source",
-        };
-
-        const ffi_note = if (reaches_ffi) " [cross-FFI alias detected]" else "";
-
-        const message = try std.fmt.allocPrint(
-            ctx.allocator,
-            "{s}() called on {s} pointer (confidence: {d:.2}%{s})",
-            .{ free_func_name, origin_str, base_confidence, ffi_note },
-        );
-
-        const issue = Issue.initWithTrace(
-            .invalid_free,
-            message,
-            location,
-            severity,
-            base_confidence,
-            trace,
-        );
-
-        try ctx.addIssue(&issue);
-
-        const omi_prefix = if (severity == .critical) "[OMI-CRITICAL] " else "[OMI-HIGH] ";
-        diag.warn("{s}Invalid {s} on {s} pointer in function: {s}{s}", .{ omi_prefix, free_func_name, origin_str, caller_name, ffi_note });
-    }
-
-    /// Create trace entry for pointer origin
-    fn createOriginTraceEntry(
-        allocator: std.mem.Allocator,
-        origin: ValueOrigin,
-        origin_info: ?PointerInfo,
-    ) !TraceEntry {
-        const desc = if (origin_info) |info|
-            try std.fmt.allocPrint(allocator, "Pointer origin: {s}", .{info.source_desc})
-        else switch (origin) {
-            .from_param => try allocator.dupe(u8, "Pointer origin: function parameter"),
-            .from_global => try allocator.dupe(u8, "Pointer origin: global variable"),
-            .from_constant => try allocator.dupe(u8, "Pointer origin: constant value"),
-            .unknown => try allocator.dupe(u8, "Pointer origin: unknown"),
-            else => try allocator.dupe(u8, "Pointer origin: non-heap source"),
-        };
-        return TraceEntry.initOwned(desc);
-    }
-
-    /// Create trace entry for free call
-    fn createFreeTraceEntry(allocator: std.mem.Allocator, func_name: []const u8) !TraceEntry {
-        const desc = try std.fmt.allocPrint(
-            allocator,
-            "Passed to {s}() which requires heap-allocated pointer",
-            .{func_name},
-        );
-        return TraceEntry.initOwned(desc);
-    }
 };
+
+fn createOriginTraceEntry(allocator: std.mem.Allocator, origin_val: ValueOrigin, origin_info: ?origin.PointerInfo) !TraceEntry {
+    const desc = if (origin_info) |info|
+        try std.fmt.allocPrint(allocator, "Pointer origin: {s}", .{info.source_desc})
+    else switch (origin_val) {
+        .from_param => try allocator.dupe(u8, "Pointer origin: function parameter"),
+        .from_global => try allocator.dupe(u8, "Pointer origin: global variable"),
+        .from_constant => try allocator.dupe(u8, "Pointer origin: constant value"),
+        .from_malloc => try allocator.dupe(u8, "Pointer origin: heap allocation"),
+        .from_ffi_call => try allocator.dupe(u8, "Pointer origin: FFI call"),
+        .from_library_borrow => try allocator.dupe(u8, "Pointer origin: borrowed library reference"),
+        .unknown => try allocator.dupe(u8, "Pointer origin: unknown"),
+    };
+    return TraceEntry.initOwned(desc);
+}
+
+fn createFreeTraceEntry(allocator: std.mem.Allocator, func_name: []const u8) !TraceEntry {
+    const desc = try std.fmt.allocPrint(
+        allocator,
+        "Passed to {s}() which requires heap-allocated pointer",
+        .{func_name},
+    );
+    return TraceEntry.initOwned(desc);
+}
+
+/// Helper to report an invalid free on a borrowed library reference.
+/// Extracted to reduce duplication across Python-specific and general branches.
+fn reportBorrowedRefIssue(
+    ctx: *PassContext,
+    caller_func: anytype,
+    callee_name: []const u8,
+    origin_val: ValueOrigin,
+    origin_info: ?origin.PointerInfo,
+    message: []const u8,
+    trace_desc: []const u8,
+) !bool {
+    const caller_name_ptr = c.LLVMGetValueName(caller_func);
+    const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
+        std.mem.span(caller_name_ptr)
+    else
+        "unknown";
+
+    const location = Location.init(caller_name);
+
+    const trace = try ctx.allocator.alloc(TraceEntry, 3);
+    trace[0] = TraceEntry.init(trace_desc);
+    trace[1] = try createOriginTraceEntry(ctx.allocator, origin_val, origin_info);
+    trace[2] = try createFreeTraceEntry(ctx.allocator, callee_name);
+
+    var issue = Issue.initWithTrace(
+        .invalid_free,
+        message,
+        location,
+        .critical,
+        0.90,
+        trace,
+    );
+    errdefer issue.deinit(ctx.allocator);
+
+    try ctx.addIssue(&issue);
+    return true;
+}
 
 test "FreeValidationPass - name and kind" {
     try std.testing.expectEqualStrings("free-validation", FreeValidationPass.name);
     try std.testing.expectEqual(PassKind.analysis, FreeValidationPass.kind);
-}
-
-test "FreeValidationPass - isFreeFunction" {
-    try std.testing.expect(FreeValidationPass.isFreeFunction("free"));
-    try std.testing.expect(FreeValidationPass.isFreeFunction("dealloc"));
-    try std.testing.expect(!FreeValidationPass.isFreeFunction("malloc"));
-    try std.testing.expect(!FreeValidationPass.isFreeFunction("printf"));
-}
-
-test "FreeValidationPass - isAllocFunction" {
-    try std.testing.expect(FreeValidationPass.isAllocFunction("malloc"));
-    try std.testing.expect(FreeValidationPass.isAllocFunction("calloc"));
-    try std.testing.expect(!FreeValidationPass.isAllocFunction("free"));
-    try std.testing.expect(!FreeValidationPass.isAllocFunction("printf"));
 }

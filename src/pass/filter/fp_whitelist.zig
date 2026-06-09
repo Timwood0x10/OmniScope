@@ -1,7 +1,7 @@
 //! Known False-Positive Suppression Whitelist
 //!
 //! Maintains patterns that are known to produce false positives
-//! from real-world audits (v0.1.6: BLST, Wasmtime, SQLite3, libuv, etc.).
+//! from real-world audits (0.2.0 corpus: BLST, Wasmtime, SQLite3, libuv, etc.).
 //!
 //! Design principles (plan/rules/skills.md §2):
 //! - Minimum code that solves the problem
@@ -41,40 +41,24 @@ pub const KnownFPPattern = struct {
     }
 };
 
-/// Top 20 known false-positive patterns from v0.1.6 audit.
+/// Minimal whitelist — exactly 3 entries per plan §2.2.
 ///
-/// Organized by category for maintainability.
-/// Each entry includes source project and reason for suppression.
+/// All other patterns are now covered by SRT detectors:
+///   - LLVM intrinsics → noise filter layer (layer1_NameBasedFilter)
+///   - Rust stdlib (Arc/RawVec/__rust_alloc/__rust_dealloc) → heap_provenance.zig + drop_glue.zig
+///   - Interior mutability (UnsafeCell) → interior_mut.zig
+///   - POSIX syscalls → posix_syscalls.zig (R-4)
+///   - Library allocators → library_alloc_pairs.zig (R-7)
+///   - into_raw ownership transfer → into_raw_transfer.zig (R-6)
+///
+/// Only patterns that cannot be expressed as IR-level semantic rules remain here.
 const known_fp_patterns = [_]KnownFPPattern{
-    // ── Category 1: LLVM Intrinsics (already handled by noise_reduction Layer 1)
-    // These are duplicated here as defense-in-depth — if a pass bypasses
-    // layer1_NameBasedFilter, the whitelist still catches them.
-
-    .{ .pattern = "llvm.threadlocal.address", .kind = .prefix, .reason = "Rust std TLS access (BLST #1 FP)", .since_version = "v0.1.7" },
-    .{ .pattern = "llvm.lifetime.start", .kind = .prefix, .reason = "LLVM lifetime marker intrinsic", .since_version = "v0.1.7" },
-    .{ .pattern = "llvm.lifetime.end", .kind = .prefix, .reason = "LLVM lifetime marker intrinsic", .since_version = "v0.1.7" },
-    .{ .pattern = "llvm.dbg.declare", .kind = .prefix, .reason = "Debug info intrinsic", .since_version = "v0.1.7" },
-    .{ .pattern = "llvm.dbg.value", .kind = .prefix, .reason = "Debug info intrinsic", .since_version = "v0.1.7" },
-    .{ .pattern = "llvm.assume", .kind = .prefix, .reason = "Optimizer hint intrinsic", .since_version = "v0.1.7" },
-    .{ .pattern = "llvm.expect", .kind = .prefix, .reason = "Branch prediction hint", .since_version = "v0.1.7" },
-    .{ .pattern = "llvm.coro.begin", .kind = .prefix, .reason = "Coroutine frame (Wasmtime)", .since_version = "v0.1.7" },
-    .{ .pattern = "llvm.coro.end", .kind = .prefix, .reason = "Coroutine cleanup (Wasmtime)", .since_version = "v0.1.7" },
-    .{ .pattern = "llvm.gc.root", .kind = .prefix, .reason = "GC root intrinsic", .since_version = "v0.1.7" },
-
-    // ── Category 2: Rust Standard Library Safe Primitives
-
-    .{ .pattern = "sync_channel::", .kind = .contains, .reason = "Rust std safe MPSC channel (BLST)", .since_version = "v0.1.7" },
-    .{ .pattern = "mpsc::channel::", .kind = .contains, .reason = "Rust std safe channel (BLST)", .since_version = "v0.1.7" },
-    .{ .pattern = "Arc::<", .kind = .contains, .reason = "Rust Arc shared ownership (BLST)", .since_version = "v0.1.7" },
-    .{ .pattern = "Waker::", .kind = .contains, .reason = "Rust async runtime Waker (Wasmtime)", .since_version = "v0.1.7" },
-    .{ .pattern = "RawVec::", .kind = .contains, .reason = "Rust Vec internals (various)", .since_version = "v0.1.7" },
-    .{ .pattern = "__rust_alloc", .kind = .contains, .reason = "Rust global allocator shim", .since_version = "v0.1.7" },
-    .{ .pattern = "__rust_dealloc", .kind = .contains, .reason = "Rust global deallocator shim", .since_version = "v0.1.7" },
-
-    // ── Category 3: Project-Specific Contextual Patterns
-
-    .{ .pattern = "uv__socket", .kind = .contains, .reason = "libuv internal socket + caller closes (design choice)", .since_version = "v0.1.7" },
-    .{ .pattern = "sqlite3MemMalloc", .kind = .exact, .reason = "SQLite custom allocator (not system malloc)", .since_version = "v0.1.7" },
+    // macOS malloc_set_zone_name: copies name string, does not retain pointer (man page)
+    .{ .pattern = "malloc_set_zone_name", .kind = .exact, .reason = "macOS: copies name string, pointer not retained (man page)", .since_version = "v0.2.0" },
+    // Rust Box::into_raw: explicit ownership transfer to caller
+    .{ .pattern = "into_raw", .kind = .contains, .reason = "Rust Box/CString/Vec::into_raw — ownership transferred to caller", .since_version = "v0.2.0" },
+    // Rust String::into_raw: same ownership transfer pattern
+    .{ .pattern = "String_into_raw", .kind = .contains, .reason = "Rust String::into_raw — ownership transferred to caller", .since_version = "v0.2.0" },
 };
 
 /// Check if a function name matches any known false-positive pattern.
@@ -111,41 +95,34 @@ pub fn is_safe_to_suppress_at_ffi_boundary(func_name: []const u8) bool {
 // Tests
 // ═══════════════════════════════════════════════════════════════
 
-test "is_known_fp - llvm.threadlocal suppressed" {
-    const fp = is_known_fp("llvm.threadlocal.address.p0i8");
+test "is_known_fp - malloc_set_zone_name suppressed" {
+    const fp = is_known_fp("malloc_set_zone_name");
     try std.testing.expect(fp != null);
-    try std.testing.expectEqualStrings("Rust std TLS access (BLST #1 FP)", fp.?.reason);
+    try std.testing.expect(fp.?.kind == .exact);
 }
 
-test "is_known_fp - rust sync_channel suppressed" {
-    const fp = is_known_fp("sync_channel::channel::new");
+test "is_known_fp - into_raw suppressed" {
+    const fp = is_known_fp("_RNvXs3std3Box3Foo8into_raw");
     try std.testing.expect(fp != null);
 }
 
 test "is_known_fp - real FFI NOT suppressed" {
+    // These must NOT be whitelisted — they are real FFI functions
+    // that should be analyzed by SRT detectors instead.
     try std.testing.expect(is_known_fp("dlopen") == null);
     try std.testing.expect(is_known_fp("malloc") == null);
+    try std.testing.expect(is_known_fp("free") == null);
     try std.testing.expect(is_known_fp("pthread_create") == null);
     try std.testing.expect(is_known_fp("sqlite3_open") == null);
     try std.testing.expect(is_known_fp("JNI_OnLoad") == null);
     try std.testing.expect(is_known_fp("Py_INCREF") == null);
     try std.testing.expect(is_known_fp("socket") == null);
-}
-
-test "is_known_fp - uv__socket contextual suppression" {
-    const fp = is_known_fp("uv__socket");
-    try std.testing.expect(fp != null);
-    try std.testing.expectEqualStrings(
-        "libuv internal socket + caller closes (design choice)",
-        fp.?.reason,
-    );
-}
-
-test "is_known_fp - sqlite3MemMalloc exact match" {
-    const fp = is_known_fp("sqlite3MemMalloc");
-    try std.testing.expect(fp != null);
-    // Similar but different name should NOT match (exact match kind)
-    try std.testing.expect(is_known_fp("sqlite3MemMallocCustom") == null);
+    // LLVM intrinsics — handled by noise filter, not whitelist
+    try std.testing.expect(is_known_fp("llvm.lifetime.start") == null);
+    try std.testing.expect(is_known_fp("llvm.dbg.declare") == null);
+    // Rust stdlib — handled by SRT detectors
+    try std.testing.expect(is_known_fp("__rust_alloc") == null);
+    try std.testing.expect(is_known_fp("__rust_dealloc") == null);
 }
 
 test "MatchKind - prefix matching" {
@@ -153,7 +130,7 @@ test "MatchKind - prefix matching" {
         .pattern = "llvm.",
         .kind = .prefix,
         .reason = "test",
-        .since_version = "v0.1.0",
+        .since_version = "v0.2.0",
     };
     try std.testing.expect(pattern.matches("llvm.test"));
     try std.testing.expect(!pattern.matches("not_llvm"));
@@ -164,7 +141,7 @@ test "MatchKind - exact matching" {
         .pattern = "malloc",
         .kind = .exact,
         .reason = "test",
-        .since_version = "v0.1.0",
+        .since_version = "v0.2.0",
     };
     try std.testing.expect(pattern.matches("malloc"));
     try std.testing.expect(!pattern.matches("malloc_custom"));
@@ -176,7 +153,7 @@ test "MatchKind - contains matching" {
         .pattern = "channel",
         .kind = .contains,
         .reason = "test",
-        .since_version = "v0.1.0",
+        .since_version = "v0.2.0",
     };
     try std.testing.expect(pattern.matches("mpsc::channel"));
     try std.testing.expect(pattern.matches("sync_channel"));

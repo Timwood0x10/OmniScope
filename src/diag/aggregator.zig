@@ -3,17 +3,42 @@
 //! This module aggregates diagnostics from various sources
 //! (static analysis, runtime verification, merge engine)
 //! and produces unified reports.
+//!
+//! ## Type Distinction (Important!)
+//!
+//! This module defines **OutputSeverity** for diagnostic log levels:
+//!   - `info` (informational)
+//!   - `warning` (potential issue)
+//!   - `err` (error condition)
+//!
+//! This is **DIFFERENT** from `CommonTypes.Severity` (issue severity):
+//!   - `.low`, `.medium`, `.high`, `.critical`
+//!
+//! **Migration Note (2026-05-31):**
+//! - Removed deprecated `pub const Severity = OutputSeverity` alias to avoid confusion.
+//! - All issue-related code MUST use `CommonTypes.Severity`.
+//! - Only diagnostic/logging code should use `OutputSeverity`.
 
 const std = @import("std");
-const CommonTypes = @import("../common/types.zig");
 
 /// Output severity level for diagnostics (logging/display purpose).
-/// This is DIFFERENT from CommonTypes.Severity (issue severity):
-/// - OutputSeverity: info/warning/err (log level semantics)
-/// - CommonTypes.Severity: low/medium/high/critical (issue criticality)
 ///
-/// aggregator.zig uses OutputSeverity for diagnostic categorization.
-/// Issue-related code should use CommonTypes.Severity instead.
+/// ## Semantic Difference from CommonTypes.Severity
+///
+/// | OutputSeverity (this file)    | CommonTypes.Severity (issues) |
+/// |-------------------------------|-------------------------------|
+/// | Log level semantics           | Issue criticality             |
+/// | info/warning/err             | low/medium/high/critical      |
+/// | For console output formatting | For issue prioritization      |
+///
+/// Use this for:
+/// - Console output formatting
+/// - Log message categorization
+/// - UI display levels
+///
+/// Do NOT use for:
+/// - Issue severity (use CommonTypes.Severity instead)
+/// - Threshold filtering (use Severity.meetsThreshold)
 pub const OutputSeverity = enum(u8) {
     /// Information only
     info = 0,
@@ -23,9 +48,9 @@ pub const OutputSeverity = enum(u8) {
     err = 2,
 };
 
-/// Re-export for backward compatibility (deprecated).
-/// New code should use OutputSeverity for diagnostics, or CommonTypes.Severity for issues.
-pub const Severity = OutputSeverity;
+// NOTE: Deprecated alias `pub const Severity = OutputSeverity` removed on 2026-05-31.
+// Reason: Caused confusion with CommonTypes.Severity (issue severity levels).
+// If you need issue severity, import from common/types.zig instead.
 
 /// Simplified event representation (temporary until runtime/merge.zig is implemented)
 pub const MergedEvent = struct {
@@ -58,11 +83,42 @@ fn freeDiagnosticsSlice(allocator: std.mem.Allocator, diags: []Diagnostic) void 
     allocator.free(diags);
 }
 
-/// Diagnostic aggregator
+/// Diagnostic aggregator with pattern-based deduplication and aggregation
 pub const DiagnosticAggregator = struct {
     allocator: std.mem.Allocator,
     diagnostics: std.ArrayList(Diagnostic),
     seen_keys: std.AutoHashMap(u64, void),
+
+    /// Pattern aggregation: tracks (issue_kind, pattern_base) → count
+    pattern_counts: std.AutoHashMap(u64, PatternInfo),
+
+    /// Pending diagnostics for deferred bucketing in flush()
+    pending: std.ArrayList(PendingDiag),
+
+    /// Threshold for pattern folding (fold when count exceeds this)
+    const PATTERN_FOLD_THRESHOLD: usize = 3;
+
+    /// Threshold for message-based folding (same kind+message across functions)
+    const MESSAGE_FOLD_THRESHOLD: usize = 5;
+
+    /// Pattern information for aggregation
+    const PatternInfo = struct {
+        kind_tag: []const u8,
+        pattern_base: []const u8,
+        count: usize,
+        first_func_name: []const u8,
+        last_func_name: []const u8,
+    };
+
+    /// Pending diagnostic for deferred bucketing in flush()
+    const PendingDiag = struct {
+        kind_tag: []const u8,
+        message: []const u8,
+        func_name: []const u8,
+        severity: OutputSeverity,
+        loc: u32,
+        confidence: f32,
+    };
 
     /// Create a new diagnostic aggregator
     pub fn init(allocator: std.mem.Allocator) !DiagnosticAggregator {
@@ -70,6 +126,8 @@ pub const DiagnosticAggregator = struct {
             .allocator = allocator,
             .diagnostics = try std.ArrayList(Diagnostic).initCapacity(allocator, 0),
             .seen_keys = std.AutoHashMap(u64, void).init(allocator),
+            .pattern_counts = std.AutoHashMap(u64, PatternInfo).init(allocator),
+            .pending = try std.ArrayList(PendingDiag).initCapacity(allocator, 0),
         };
     }
 
@@ -78,6 +136,18 @@ pub const DiagnosticAggregator = struct {
         self.clear();
         self.diagnostics.deinit(self.allocator);
         self.seen_keys.deinit();
+
+        // Free pattern info strings
+        var it = self.pattern_counts.iterator();
+        while (it.next()) |entry| {
+            self.allocator.free(entry.value_ptr.kind_tag);
+            self.allocator.free(entry.value_ptr.pattern_base);
+            self.allocator.free(entry.value_ptr.first_func_name);
+            self.allocator.free(entry.value_ptr.last_func_name);
+        }
+        self.pattern_counts.deinit();
+
+        self.pending.deinit(self.allocator);
     }
 
     /// Add a diagnostic with cross-pass deduplication
@@ -105,7 +175,10 @@ pub const DiagnosticAggregator = struct {
     pub fn addIssue(self: *DiagnosticAggregator, issue: anytype) !bool {
         const T = @TypeOf(issue);
 
-        // Compile-time validation: ensure required fields exist with correct types
+        // Compile-time validation: ensure required fields exist.
+        // Note: Type validation (enum/struct) is skipped for Zig 0.15.2 compatibility
+        // since @typeInfo behavior varies across versions. The field existence check
+        // is sufficient to catch most usage errors at compile time.
         comptime {
             if (!@hasField(T, "location")) {
                 @compileError("addIssue requires .location field (struct)");
@@ -113,31 +186,11 @@ pub const DiagnosticAggregator = struct {
             if (!@hasField(T, "kind")) {
                 @compileError("addIssue requires .kind field (enum)");
             }
-
-            // Validate .kind is an enum type
-            const KindType = std.meta.FieldType(T, .kind);
-            if (@typeInfo(KindType) != .Enum) {
-                @compileError(".kind must be an enum type");
-            }
-
-            // Validate .location is a struct type
-            const LocType = std.meta.FieldType(T, .location);
-            if (@typeInfo(LocType) != .Struct) {
-                @compileError(".location must be a struct type");
-            }
-
-            // If location has a .function field, validate its type
-            if (@hasField(LocType, "function")) {
-                const FuncType = std.meta.FieldType(LocType, .function);
-                if (FuncType != []const u8) {
-                    @compileError(".location.function must be []const u8");
-                }
-            }
         }
 
-        const LocType = std.meta.FieldType(T, .location);
+        const LocType = @TypeOf(issue.location);
         const func_name = if (@hasField(LocType, "function"))
-            @field(@field(issue, "location"), "function")
+            issue.location.function
         else
             "(unknown)";
 
@@ -146,13 +199,14 @@ pub const DiagnosticAggregator = struct {
         var hasher = std.hash.Fnv1a_64.init();
         hasher.update(func_name);
         hasher.update(kind_tag);
-        const loc = @field(issue, "location");
+        const loc = issue.location;
         if (@hasField(LocType, "file")) {
-            if (@field(loc, "file")) |file| hasher.update(file);
+            if (loc.file) |file| hasher.update(file);
         }
         if (@hasField(LocType, "line")) {
-            if (@field(loc, "line")) |line| {
-                hasher.update(&std.mem.toBytes(line));
+            // Line is u32 (not optional), include in hash if non-zero.
+            if (loc.line != 0) {
+                hasher.update(&std.mem.toBytes(loc.line));
             }
         }
         const dedup_key = hasher.final();
@@ -172,24 +226,176 @@ pub const DiagnosticAggregator = struct {
         else
             0.5;
 
-        // Map issue kind to diagnostic kind (preserve semantic info)
-        const diag_kind = mapKindToDiagnostic(kind_tag);
+        // Preserve location info when available.
+        // Handle both u32 and ?u32 for line field (test compatibility).
+        const loc_id: u32 = blk: {
+            if (@hasField(@TypeOf(loc), "line")) {
+                // Use inline if to handle both optional and non-optional line fields
+                const line_val = loc.line;
+                break :blk switch (@TypeOf(line_val)) {
+                    ?u32 => line_val orelse 0,
+                    u32 => line_val,
+                    else => 0,
+                };
+            } else {
+                break :blk 0;
+            }
+        };
 
-        // Preserve location info when available
-        const loc_id: u64 = if (@hasField(@TypeOf(loc), "line"))
-            if (@field(loc, "line")) |line| @as(u64, line) else 0
-        else
-            0;
+        const severity: OutputSeverity = if (conf >= 0.8) .err else if (conf >= 0.5) .warning else .info;
 
-        try self.add(.{
-            .kind = diag_kind,
-            .severity = if (conf >= 0.8) .err else if (conf >= 0.5) .warning else .info,
+        // Push to pending list for deferred bucketing in flush()
+        try self.pending.append(self.allocator, .{
+            .kind_tag = kind_tag,
+            .message = try self.allocator.dupe(u8, msg),
+            .func_name = try self.allocator.dupe(u8, func_name),
+            .severity = severity,
             .loc = loc_id,
-            .message = msg,
             .confidence = conf,
         });
 
+        // Pattern-based aggregation: detect and track repetitive patterns
+        // (e.g., ffi_alloc_1, ffi_alloc_2, ... ffi_alloc_20)
+        if (extractPatternBase(func_name)) |pattern_base| {
+            const pkey = patternHashKey(kind_tag, pattern_base);
+            const pattern_gop = try self.pattern_counts.getOrPut(pkey);
+
+            if (!pattern_gop.found_existing) {
+                // First occurrence of this pattern
+                pattern_gop.value_ptr.* = .{
+                    .kind_tag = try self.allocator.dupe(u8, kind_tag),
+                    .pattern_base = try self.allocator.dupe(u8, pattern_base),
+                    .count = 1,
+                    .first_func_name = try self.allocator.dupe(u8, func_name),
+                    .last_func_name = try self.allocator.dupe(u8, func_name),
+                };
+            } else {
+                // Update existing pattern info
+                pattern_gop.value_ptr.count += 1;
+
+                // Free old last_func_name before updating
+                self.allocator.free(pattern_gop.value_ptr.last_func_name);
+                pattern_gop.value_ptr.last_func_name = try self.allocator.dupe(u8, func_name);
+            }
+        }
+
         return true;
+    }
+
+    /// Flush pending diagnostics with deferred bucketing and aggregation.
+    ///
+    /// Processes the pending list accumulated by addIssue():
+    /// 1. Emits folded diagnostics for patterns exceeding PATTERN_FOLD_THRESHOLD
+    /// 2. Groups pending diagnostics by (kind_tag + message) hash key
+    /// 3. For groups > MESSAGE_FOLD_THRESHOLD, emits ONE aggregated diagnostic
+    /// 4. For groups <= MESSAGE_FOLD_THRESHOLD, emits each diagnostic individually
+    /// 5. Clears the pending list
+    pub fn flush(self: *DiagnosticAggregator) !void {
+        // 1. Emit pattern-folded diagnostics for patterns exceeding threshold
+        {
+            var it = self.pattern_counts.iterator();
+            while (it.next()) |entry| {
+                if (entry.value_ptr.count > PATTERN_FOLD_THRESHOLD) {
+                    const fold_msg = try std.fmt.allocPrint(
+                        self.allocator,
+                        "[{s}×{d}] {s}{{1..{d}}} — {d} identical patterns",
+                        .{
+                            entry.value_ptr.kind_tag,
+                            entry.value_ptr.count,
+                            entry.value_ptr.pattern_base,
+                            entry.value_ptr.count,
+                            entry.value_ptr.count,
+                        },
+                    );
+                    defer self.allocator.free(fold_msg);
+
+                    try self.add(.{
+                        .kind = mapKindToDiagnostic(entry.value_ptr.kind_tag),
+                        .severity = .warning,
+                        .loc = 0,
+                        .message = fold_msg,
+                        .confidence = 0.8,
+                    });
+                }
+            }
+        }
+
+        // If nothing pending, nothing more to do
+        if (self.pending.items.len == 0) return;
+
+        // 2. Build group counts by (kind_tag + message) hash key
+        var group_counts = std.AutoHashMap(u64, usize).init(self.allocator);
+        defer group_counts.deinit();
+
+        for (self.pending.items) |diag| {
+            var hasher = std.hash.Fnv1a_64.init();
+            hasher.update(diag.kind_tag);
+            hasher.update(diag.message);
+            const key = hasher.final();
+
+            const gop = try group_counts.getOrPut(key);
+            if (!gop.found_existing) {
+                gop.value_ptr.* = 1;
+            } else {
+                gop.value_ptr.* += 1;
+            }
+        }
+
+        // 3. Track which aggregated groups have already been emitted
+        var emitted_groups = std.AutoHashMap(u64, void).init(self.allocator);
+        defer emitted_groups.deinit();
+
+        // 4. Iterate pending and emit individual or aggregated diagnostics
+        for (self.pending.items) |diag| {
+            var hasher = std.hash.Fnv1a_64.init();
+            hasher.update(diag.kind_tag);
+            hasher.update(diag.message);
+            const key = hasher.final();
+
+            const count = group_counts.get(key).?;
+
+            if (count > MESSAGE_FOLD_THRESHOLD) {
+                // Emit aggregated diagnostic once per group
+                const gop = try emitted_groups.getOrPut(key);
+                if (!gop.found_existing) {
+                    const fold_msg = try std.fmt.allocPrint(
+                        self.allocator,
+                        "[aggregated] {s} ×{d} ({s} and {d} other functions)",
+                        .{
+                            diag.kind_tag,
+                            count,
+                            diag.func_name,
+                            count - 1,
+                        },
+                    );
+                    defer self.allocator.free(fold_msg);
+
+                    try self.add(.{
+                        .kind = mapKindToDiagnostic(diag.kind_tag),
+                        .severity = diag.severity,
+                        .loc = diag.loc,
+                        .message = fold_msg,
+                        .confidence = diag.confidence,
+                    });
+                }
+            } else {
+                // Emit individually
+                try self.add(.{
+                    .kind = mapKindToDiagnostic(diag.kind_tag),
+                    .severity = diag.severity,
+                    .loc = diag.loc,
+                    .message = diag.message,
+                    .confidence = diag.confidence,
+                });
+            }
+        }
+
+        // 5. Clear pending list
+        for (self.pending.items) |diag| {
+            self.allocator.free(diag.message);
+            self.allocator.free(diag.func_name);
+        }
+        self.pending.clearRetainingCapacity();
     }
 
     fn mapKindToDiagnostic(kind_str: []const u8) DiagnosticKind {
@@ -220,7 +426,7 @@ pub const DiagnosticAggregator = struct {
     /// returned slice and all messages within.
     pub fn getBySeverity(
         self: *const DiagnosticAggregator,
-        severity: Severity,
+        severity: OutputSeverity,
         allocator: std.mem.Allocator,
     ) ![]Diagnostic {
         var filtered = try std.ArrayList(Diagnostic).initCapacity(allocator, 0);
@@ -298,12 +504,12 @@ pub const DiagnosticAggregator = struct {
         anomalies: []Anomaly,
     ) !void {
         for (anomalies) |anomaly| {
-            const severity: Severity = if (anomaly.confidence >= 0.8)
-                Severity.err
+            const severity: OutputSeverity = if (anomaly.confidence >= 0.8)
+                OutputSeverity.err
             else if (anomaly.confidence >= 0.5)
-                Severity.warning
+                OutputSeverity.warning
             else
-                Severity.info;
+                OutputSeverity.info;
 
             const diag = Diagnostic{
                 .kind = .anomaly,
@@ -342,13 +548,65 @@ pub const DiagnosticAggregator = struct {
         };
     }
 
-    /// Clear all diagnostics
+    /// Clear all diagnostics and reset pattern tracking
     pub fn clear(self: *DiagnosticAggregator) void {
         for (self.diagnostics.items) |diag| {
             self.allocator.free(diag.message);
         }
         self.diagnostics.clearRetainingCapacity();
         self.seen_keys.clearRetainingCapacity();
+
+        // Free pattern info strings and clear
+        var it = self.pattern_counts.iterator();
+        while (it.next()) |entry| {
+            self.allocator.free(entry.value_ptr.kind_tag);
+            self.allocator.free(entry.value_ptr.pattern_base);
+            self.allocator.free(entry.value_ptr.first_func_name);
+            self.allocator.free(entry.value_ptr.last_func_name);
+        }
+        self.pattern_counts.clearRetainingCapacity();
+
+        // Free pending items and clear
+        for (self.pending.items) |diag| {
+            self.allocator.free(diag.message);
+            self.allocator.free(diag.func_name);
+        }
+        self.pending.clearRetainingCapacity();
+    }
+
+    /// Extract pattern base from function name by detecting numeric suffixes.
+    ///
+    /// Examples:
+    ///   - "ffi_alloc_3" → "ffi_alloc_"
+    ///   - "test_func_10" → "test_func_"
+    ///   - "normal_func" → null (no numeric suffix)
+    ///
+    /// Returns the prefix before the last `_N` suffix, or null if no pattern detected.
+    fn extractPatternBase(func_name: []const u8) ?[]const u8 {
+        if (func_name.len < 2) return null;
+
+        var i = func_name.len;
+
+        // Find trailing digits
+        while (i > 0 and std.ascii.isDigit(func_name[i - 1])) {
+            i -= 1;
+        }
+
+        // No digits found or digits at start (nothing before digits)
+        if (i == func_name.len or i <= 1) return null;
+
+        // Require underscore before digits (_N format)
+        if (func_name[i - 1] != '_') return null;
+
+        return func_name[0..i];
+    }
+
+    /// Generate a hash key for pattern aggregation: (issue_kind, pattern_base)
+    fn patternHashKey(kind_tag: []const u8, pattern_base: []const u8) u64 {
+        var hasher = std.hash.Fnv1a_64.init();
+        hasher.update(kind_tag);
+        hasher.update(pattern_base);
+        return hasher.final();
     }
 };
 
@@ -372,8 +630,8 @@ pub const DiagnosticKind = enum(u8) {
 pub const Diagnostic = struct {
     /// Diagnostic kind
     kind: DiagnosticKind,
-    /// Severity level
-    severity: Severity,
+    /// Severity level (OutputSeverity: info/warning/err)
+    severity: OutputSeverity,
     /// Location ID
     loc: u32,
     /// Diagnostic message
@@ -718,4 +976,79 @@ test "DiagnosticAggregator - dedup with null fields" {
     };
     const result2 = try aggregator.addIssue(issue2);
     try std.testing.expect(!result2);
+}
+
+test "DiagnosticAggregator - pattern aggregation" {
+    var aggregator = try DiagnosticAggregator.init(std.testing.allocator);
+    defer aggregator.deinit();
+
+    const TestIssue = struct {
+        location: struct {
+            function: []const u8,
+            file: ?[]const u8,
+            line: u32,
+            column: ?u32,
+        },
+        kind: enum { memory_leak, ffi_unsafe_call },
+        message: []const u8,
+        confidence: f32,
+    };
+
+    // Add 5 issues with pattern base "ffi_alloc_"
+    for (1..6) |i| {
+        const func_name = try std.fmt.allocPrint(
+            std.testing.allocator,
+            "ffi_alloc_{d}",
+            .{i},
+        );
+        defer std.testing.allocator.free(func_name);
+
+        const issue = TestIssue{
+            .location = .{
+                .function = func_name,
+                .file = "stress_patterns.c",
+                .line = @intCast(i * 10),
+                .column = null,
+            },
+            .kind = .memory_leak,
+            .message = "Potential memory leak",
+            .confidence = 0.9,
+        };
+
+        _ = try aggregator.addIssue(issue);
+    }
+
+    // Flush pending to process pattern folding
+    try aggregator.flush();
+
+    // Should have individual issues + 1 folded summary
+    const all_diags = aggregator.getAll();
+
+    // Check that we have a folded summary message
+    var found_folded_summary = false;
+    for (all_diags) |diag| {
+        if (std.mem.indexOf(u8, diag.message, "identical patterns") != null) {
+            found_folded_summary = true;
+
+            // Verify the folded summary contains key components
+            try std.testing.expect(std.mem.indexOf(u8, diag.message, "ffi_alloc_") != null);
+            try std.testing.expect(std.mem.indexOf(u8, diag.message, "×") != null);
+        }
+    }
+
+    try std.testing.expect(found_folded_summary);
+}
+
+test "DiagnosticAggregator - extractPatternBase" {
+    // Test various function name patterns
+
+    // Should extract pattern base
+    try std.testing.expectEqualStrings("ffi_alloc_", DiagnosticAggregator.extractPatternBase("ffi_alloc_3").?);
+    try std.testing.expectEqualStrings("test_func_", DiagnosticAggregator.extractPatternBase("test_func_10").?);
+    try std.testing.expectEqualStrings("handler_", DiagnosticAggregator.extractPatternBase("handler_1").?);
+
+    // Should return null for non-pattern names
+    try std.testing.expect(DiagnosticAggregator.extractPatternBase("normal_func") == null);
+    try std.testing.expect(DiagnosticAggregator.extractPatternBase("func123") == null); // no underscore
+    try std.testing.expect(DiagnosticAggregator.extractPatternBase("_123") == null); // starts with underscore+digit
 }

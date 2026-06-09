@@ -2,6 +2,7 @@
 //!
 //! This module manages pass registration, dependency resolution,
 //! and execution in the correct order using topological sorting.
+//! Supports optional per-pass performance profiling via --perf-stats flag.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -12,6 +13,7 @@ const DiagnosticWriter = @import("pass.zig").DiagnosticWriter;
 const PassKind = @import("pass.zig").PassKind;
 const FactStore = @import("../fact/store.zig").FactStore;
 const QueryEngine = @import("../fact/query.zig").QueryEngine;
+const profiler = @import("../perf/profiler.zig");
 
 /// Dependency resolution error
 pub const DependencyError = error{
@@ -20,12 +22,16 @@ pub const DependencyError = error{
 };
 
 /// Pass manager
+const log = @import("../common/log.zig");
+
 pub const PassManager = struct {
     allocator: Allocator,
     passes: std.ArrayList(PassEntry),
     pass_map: std.StringHashMap(usize), // name -> index
     resolved_order: ?[]usize, // indices in execution order
     execution_names: ?[]const []const u8, // cached pass names in order
+    perf_stats: bool = false, // Enable per-pass performance profiling
+    pass_stats_collector: ?profiler.PassStatsCollector = null, // Collected statistics
 
     const PassEntry = struct {
         name: []const u8,
@@ -52,6 +58,10 @@ pub const PassManager = struct {
         }
         if (self.resolved_order) |order| {
             self.allocator.free(order);
+        }
+        if (self.pass_stats_collector) |*collector| {
+            collector.deinit();
+            self.pass_stats_collector = null;
         }
         self.pass_map.deinit();
         self.passes.deinit(self.allocator);
@@ -121,8 +131,6 @@ pub const PassManager = struct {
             for (pass.deps) |dep_name| {
                 // Find dependency index
                 const dep_idx = self.pass_map.get(dep_name) orelse {
-                    // Dependency not found - check if it's a special case
-                    // For now, we assume all dependencies must be registered
                     return error.MissingDependency;
                 };
                 // Add edge: dep_idx -> i
@@ -196,26 +204,77 @@ pub const PassManager = struct {
             _ = try self.resolveDependencies();
         }
 
-        // Execute in resolved order with graceful degradation (v0.1.6)
+        // Initialize stats collector if profiling is enabled
+        if (self.perf_stats) {
+            self.pass_stats_collector = profiler.PassStatsCollector.init(self.allocator);
+        }
+
+        // Execute in resolved order with graceful degradation.
         var pass_failures: usize = 0;
         for (self.resolved_order.?) |idx| {
             const pass_name = self.passes.items[idx].name;
+
+            // Per-pass timing and memory sampling (only when enabled)
+            var pass_timer: ?profiler.PassTimer = null;
+            if (self.perf_stats) {
+                pass_timer = profiler.PassTimer.startPass() catch null;
+            }
+
             const t0 = std.time.nanoTimestamp();
             self.passes.items[idx].run_fn(ctx, diag) catch |err| {
                 diag.warn("PassManager: pass '{s}' failed with error: {any}, degrading gracefully", .{ pass_name, err });
                 pass_failures += 1;
                 // Continue running remaining passes
             };
+
+            // Record per-pass statistics
+            if (self.perf_stats and pass_timer != null) {
+                if (pass_timer) |*timer| {
+                    if (timer.stopPass(pass_name)) |stats| {
+                        if (self.pass_stats_collector) |*collector| {
+                            collector.record(stats) catch {};
+                        }
+                    } else |_| {}
+                }
+            }
+
+            // Early exit: no FFI boundaries found, skip remaining heavy passes
+            if (ctx.early_exit) {
+                diag.info("PassManager: early exit after '{s}' — no FFI boundaries, remaining passes skipped", .{pass_name});
+                break;
+            }
             const elapsed_ns = @max(@as(i128, 0), std.time.nanoTimestamp() - t0);
             const elapsed_ms = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000.0;
-            if (elapsed_ms > 10) {
-                diag.info("[PERF] Pass '{s}: {d} ms", .{ pass_name, @as(u32, @intFromFloat(elapsed_ms)) });
+            if (elapsed_ms >= 0) {
+                log.info("[PERF] Pass '{s}': {d:.2} ms", .{ pass_name, elapsed_ms });
+            }
+        }
+
+        // Print performance report if profiling was enabled
+        if (self.perf_stats) {
+            if (self.pass_stats_collector) |*collector| {
+                collector.printReport(true);
             }
         }
 
         if (pass_failures > 0) {
             diag.info("PassManager: completed with {} degraded passes out of {}", .{ pass_failures, self.resolved_order.?.len });
         }
+    }
+
+    /// Enable or disable per-pass performance profiling
+    /// Must be called before run()
+    pub fn setPerfStats(self: *PassManager, enabled: bool) void {
+        self.perf_stats = enabled;
+    }
+
+    /// Get the collected pass statistics (for programmatic access)
+    /// Returns null if profiling was not enabled or no data collected
+    pub fn getPassStats(self: *const PassManager) ?[]const profiler.PassStats {
+        if (self.pass_stats_collector) |*collector| {
+            return collector.stats.items;
+        }
+        return null;
     }
 
     /// Get the number of registered passes
@@ -271,12 +330,29 @@ test "PassManager - run passes" {
 
     try manager.registerPass(TestPass);
 
+    // Create minimal IR store for PassContext
+    const ir_mod = @import("../ir/ir_store.zig");
+    var ir_store = ir_mod.ModuleIRStore{
+        .allocator = std.testing.allocator,
+        .functions = std.StringHashMap(*ir_mod.FunctionIR).init(std.testing.allocator),
+        .function_list = &[_]*ir_mod.FunctionIR{},
+        .globals = &.{},
+        .global_names = std.StringHashMap(usize).init(std.testing.allocator),
+        .function_count = 0,
+        .total_instruction_count = 0,
+    };
+    defer {
+        ir_store.functions.deinit();
+        ir_store.global_names.deinit();
+    }
+
     var ctx = try PassContext.init(
         std.testing.allocator,
         null,
         &fact_store,
         &query_engine,
         &data_flow_graph,
+        &ir_store,
     );
     defer ctx.deinit();
     var diag = DiagnosticWriter{ .allocator = std.testing.allocator };

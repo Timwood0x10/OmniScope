@@ -13,7 +13,7 @@
 //! - Layer 1: FFI high-risk functions (C standard library)
 //! - Layer 2: Rust ownership patterns (into_raw, from_raw, as_ptr)
 //! - Layer 3: Go cgo allocator patterns
-//! - Layer 4: Swift FFI patterns
+//! - Layer 4: C# FFI patterns
 //! - Layer 5: Zig Standard Library patterns
 //! - Layer 6: C++ Standard Library patterns
 //!
@@ -38,6 +38,7 @@ const python_c_api_reg = @import("python_c_api_reg.zig");
 const posix_io_reg = @import("posix_io_reg.zig");
 const posix_thread_reg = @import("posix_thread_reg.zig");
 const dynamic_loading_reg = @import("dynamic_loading_reg.zig");
+const pure_computation_reg = @import("pure_computation_reg.zig");
 
 pub const RiskKind = types.RiskKind;
 pub const Severity = types.Severity;
@@ -55,7 +56,7 @@ pub const SemanticRegistry = struct {
     /// Layer 3: Go cgo allocator patterns
     const layer3 = layer3_reg.layer3_functions;
 
-    /// Layer 4: Swift FFI patterns
+    /// Layer 4: C# FFI patterns
     const layer4 = layer4_reg.layer4_functions;
 
     /// Layer 5: Zig Standard Library patterns
@@ -85,54 +86,97 @@ pub const SemanticRegistry = struct {
     /// Dynamic loading functions
     const dynamic_loading = dynamic_loading_reg.dynamic_loading_functions;
 
+    // ── Pure computation functions (no memory side effects) ──
+    const pure_computation = pure_computation_reg.pure_computation_functions;
+
+    // ========================================================================
+    // Optimized Lookup: HashMap for exact matches, linear scan for patterns
+    // ========================================================================
+
+    /// Runtime-initialized HashMap for exact-match patterns (O(1) lookup).
+    /// Populated once on first call to lookup() from all layer arrays.
+    /// Thread-safe via spinlock (same pattern as AllocatorKB).
+    var exact_map: ?std.StringHashMap(FunctionSemantics) = null;
+    var exact_map_lock = std.atomic.Value(bool).init(false);
+
+    /// Non-exact entries (contains/suffix) collected once on first call.
+    /// Stored as a flat slice for efficient linear scanning.
+    var non_exact: ?[]const FunctionSemantics = null;
+
+    /// Ensure the lookup tables are initialized. Called once per process.
+    fn ensureLookupTables() void {
+        // Double-checked locking: fast path (most calls).
+        if (exact_map != null) return;
+
+        while (exact_map_lock.swap(true, .acquire)) {}
+        defer exact_map_lock.store(false, .release);
+
+        // Re-check after acquiring lock.
+        if (exact_map != null) return;
+
+        var map = std.StringHashMap(FunctionSemantics).init(std.heap.page_allocator);
+        var list = std.ArrayList(FunctionSemantics).initCapacity(std.heap.page_allocator, 0) catch return;
+
+        // Iterate all 16 layer arrays and partition into exact vs non-exact.
+        // inline for ensures compile-time unrolling — zero runtime loop overhead.
+        const all_layers = [_][]const FunctionSemantics{
+            &layer1,           &layer2,          &layer3,
+            &layer4,           &layer5,          &layer6,
+            &jni,              &python_c_api,    &file_io,
+            &network_io,       &signal_handler,  &thread_mgmt,
+            &process_mgmt,     &dynamic_loading, &static_buffer,
+            &pure_computation,
+        };
+        for (all_layers) |layer| {
+            for (layer) |sem| {
+                if (sem.match_type == .exact) {
+                    // O(1) amortized insert. Duplicate patterns are fine —
+                    // first-wins semantics preserved by checking containsKey first.
+                    if (!map.contains(sem.pattern)) {
+                        map.put(sem.pattern, sem) catch |err| {
+                            std.log.warn("SemanticRegistry: OOM inserting exact pattern '{s}': {}", .{ sem.pattern, err });
+                            continue;
+                        };
+                    }
+                } else {
+                    list.append(std.heap.page_allocator, sem) catch |err| {
+                        std.log.warn("SemanticRegistry: OOM appending non-exact pattern '{s}': {}", .{ sem.pattern, err });
+                        continue;
+                    };
+                }
+            }
+        }
+
+        // Publish non_exact slice first (atomic store not needed — single writer).
+        non_exact = list.toOwnedSlice(std.heap.page_allocator) catch |err| {
+            std.log.warn("SemanticRegistry: OOM finalizing non_exact slice: {}", .{err});
+            return;
+        };
+        // Publish map last — signals tables are ready.
+        exact_map = map;
+    }
+
     /// Lookup function semantics by name.
-    /// Searches all layers in order.
+    ///
+    /// Performance: O(1) for exact-match patterns (HashMap lookup),
+    /// O(k) for contains/suffix patterns (k ≈ 138, down from 312 total).
     pub fn lookup(func_name: []const u8) ?FunctionSemantics {
-        for (layer1) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
+        ensureLookupTables();
+
+        // Fast path: O(1) HashMap lookup for exact-match patterns.
+        // Covers ~174 entries (malloc, free, Py_DECREF, JNI_*, etc.).
+        if (exact_map.?.get(func_name)) |sem| {
+            return sem;
         }
-        for (layer2) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
+
+        // Slow path: linear scan for contains/suffix patterns (~138 entries).
+        // These cannot be hashed — pattern is a substring/suffix of func_name.
+        if (non_exact) |entries| {
+            for (entries) |sem| {
+                if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
+            }
         }
-        for (layer3) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (layer4) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (layer5) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (layer6) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (jni) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (python_c_api) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (file_io) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (network_io) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (signal_handler) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (thread_mgmt) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (process_mgmt) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (dynamic_loading) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
-        for (static_buffer) |sem| {
-            if (matchesPattern(func_name, sem.pattern, sem.match_type)) return sem;
-        }
+
         return null;
     }
 
@@ -211,7 +255,7 @@ pub const SemanticRegistry = struct {
         return layer1.len + layer2.len + layer3.len + layer4.len + layer5.len + layer6.len +
             jni.len + python_c_api.len + file_io.len + network_io.len +
             signal_handler.len + thread_mgmt.len + process_mgmt.len + dynamic_loading.len +
-            static_buffer.len;
+            static_buffer.len + pure_computation.len;
     }
 
     // ========================================================================
@@ -266,7 +310,7 @@ pub const SemanticRegistry = struct {
     };
 
     /// Known language identifiers for cross-language inference.
-    pub const Language = enum { go, rust, c, cpp, python, swift, zig, unknown };
+    pub const Language = enum { go, rust, c, cpp, python, csharp, zig, unknown };
 
     /// Parse a language identifier string to Language enum.
     pub fn parseLanguage(lang_str: []const u8) Language {
@@ -284,7 +328,7 @@ pub const SemanticRegistry = struct {
         if (std.mem.eql(u8, lower, "c")) return .c;
         if (std.mem.eql(u8, lower, "cpp") or std.mem.eql(u8, lower, "c++")) return .cpp;
         if (std.mem.eql(u8, lower, "python") or std.mem.eql(u8, lower, "py")) return .python;
-        if (std.mem.eql(u8, lower, "swift")) return .swift;
+        if (std.mem.eql(u8, lower, "csharp")) return .csharp;
         if (std.mem.eql(u8, lower, "zig")) return .zig;
         return .unknown;
     }
@@ -420,7 +464,7 @@ pub const SemanticRegistry = struct {
 };
 
 test "SemanticRegistry - RiskKind enum" {
-    try std.testing.expectEqual(@as(usize, 20), @typeInfo(RiskKind).@"enum".fields.len);
+    try std.testing.expectEqual(@as(usize, 21), @typeInfo(RiskKind).@"enum".fields.len);
 }
 
 test "SemanticRegistry - Severity enum" {
@@ -462,7 +506,7 @@ test "SemanticRegistry - totalCount" {
 
 test "R9.1 inferCrossLangRisk - Go to C.malloc" {
     const result = SemanticRegistry.inferCrossLangRisk("go", "malloc") orelse
-        @panic("expected inference result");
+        return error.TestUnexpectedResult;
     try std.testing.expectEqual(RiskKind.go_cgo_alloc, result.kind);
     try std.testing.expectEqual(Severity.high, result.severity);
     try std.testing.expect(result.confidence >= 0.90);
@@ -471,7 +515,7 @@ test "R9.1 inferCrossLangRisk - Go to C.malloc" {
 
 test "R9.1 inferCrossLangRisk - Go to C.free is critical" {
     const result = SemanticRegistry.inferCrossLangRisk("go", "free") orelse
-        @panic("expected inference result");
+        return error.TestUnexpectedResult;
     try std.testing.expectEqual(RiskKind.go_cgo_alloc, result.kind);
     try std.testing.expectEqual(Severity.critical, result.severity);
     try std.testing.expect(result.confidence >= 0.95);
@@ -480,7 +524,7 @@ test "R9.1 inferCrossLangRisk - Go to C.free is critical" {
 
 test "R9.1 inferCrossLangRisk - Rust to C.strcpy" {
     const result = SemanticRegistry.inferCrossLangRisk("rust", "strcpy") orelse
-        @panic("expected inference result");
+        return error.TestUnexpectedResult;
     try std.testing.expectEqual(RiskKind.unchecked_copy, result.kind);
     try std.testing.expect(result.confidence >= 0.85);
 }

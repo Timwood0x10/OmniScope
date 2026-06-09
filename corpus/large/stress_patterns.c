@@ -23,6 +23,10 @@ void free(void* ptr);
 void _RZN4alloc5alloc17hba3a1b2c3d4e5f6g(void** ptr);
 void _RZN4core4drop9drop_in_place17hba3a1b2c3d4e5f6g(void* ptr);
 
+// Real Rust allocator intrinsic (recognized by allocation_classifier)
+void* __rust_alloc(size_t size, size_t align);
+void __rust_dealloc(void* ptr, size_t size, size_t align);
+
 // Simulated Zig allocator functions
 // Zig allocator patterns: Allocator., allocImpl
 void zig_allocator_allocImpl(void** ptr, size_t size);
@@ -40,6 +44,21 @@ void _cgo_free(void* ptr);
         _RZN4alloc5alloc17hba3a1b2c3d4e5f6g(&ptr); \
         /* Leak: never call rust_consume_and_free */ \
     }
+
+// Cross-lang mismatch: Rust __rust_alloc freed by C free()
+// This SHOULD trigger detectCrossLangAllocMismatch
+void rust_alloc_c_free_mismatch(void) {
+    void* ptr = __rust_alloc(128, 8);
+    // BUG: Rust allocator freed by C free() — allocator mismatch
+    free(ptr);
+}
+
+// Cross-lang mismatch: C malloc freed by Rust __rust_dealloc
+void c_malloc_rust_dealloc_mismatch(void) {
+    void* ptr = malloc(128);
+    // BUG: C allocator freed by Rust dealloc — allocator mismatch
+    __rust_dealloc(ptr, 128, 8);
+}
 
 // Stress test: Generate 20 FFI free mismatch functions
 #define GEN_FFI_MISMATCH_FUNC(n) \
@@ -224,6 +243,10 @@ int main() {
     _RZN12rust_c_mismatch17hba3a1b2c3d4e5f6g();
     zig_allocImpl_c_mismatch();
     c_zig_mismatch();
+
+    // Cross-lang mismatch tests (should trigger detectCrossLangAllocMismatch)
+    rust_alloc_c_free_mismatch();
+    c_malloc_rust_dealloc_mismatch();
 
     // Call stress test functions
     ffi_alloc_01(); ffi_alloc_02(); ffi_alloc_03(); ffi_alloc_04(); ffi_alloc_05();

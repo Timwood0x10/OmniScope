@@ -64,39 +64,38 @@ pub const IntegerOverflowPass = struct {
     ) !bool {
         const opcode = c.LLVMGetInstructionOpcode(inst);
 
-        switch (opcode) {
-            c.LLVMAdd, c.LLVMSub, c.LLVMMul => {
-                if (try isPotentiallyUnsafeOperation(inst)) {
-                    const caller_name_ptr = c.LLVMGetValueName(caller_func);
-                    const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
-                        std.mem.span(caller_name_ptr)
-                    else
-                        "unknown";
+        // Check for arithmetic operations that could overflow
+        if (opcode == c.LLVMAdd or opcode == c.LLVMSub or opcode == c.LLVMMul) {
+            if (try isPotentiallyUnsafeOperation(inst)) {
+                const caller_name_ptr = c.LLVMGetValueName(caller_func);
+                const caller_name = if (@intFromPtr(caller_name_ptr) != 0)
+                    std.mem.span(caller_name_ptr)
+                else
+                    "unknown";
 
-                    const location = Location.init(caller_name);
-                    const confidence = 0.6; // Base confidence for integer overflow
+                const location = Location.init(caller_name);
+                const confidence = 0.6; // Base confidence for integer overflow
 
-                    const message = try std.fmt.allocPrint(
-                        ctx.allocator,
-                        "Potential integer overflow in arithmetic operation (confidence: {d:.2}%)",
-                        .{confidence * 100.0},
-                    );
+                const message = try std.fmt.allocPrint(
+                    ctx.allocator,
+                    "Potential integer overflow in arithmetic operation (confidence: {d:.2}%)",
+                    .{confidence * 100.0},
+                );
 
-                    const issue = Issue.init(
-                        .integer_overflow,
-                        message,
-                        location,
-                        .medium,
-                        confidence,
-                    );
+                var issue = Issue.init(
+                    .integer_overflow, // Integer overflow or underflow (CWE-190/191)
+                    message,
+                    location,
+                    .medium,
+                    confidence,
+                );
+                issue.owned = true; // message is heap-allocated via allocPrint
 
-                    try ctx.addIssue(&issue);
+                try ctx.addIssue(&issue);
 
-                    diag.warn("Integer overflow detected in function: {s}", .{caller_name});
-                    return true;
-                }
-            },
-            else => {},
+                diag.warn("Integer overflow detected in function: {s}", .{caller_name});
+                return true;
+            }
         }
 
         return false;
