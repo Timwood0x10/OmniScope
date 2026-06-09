@@ -11,123 +11,127 @@
                                                                    `..
 ```
 
-OmniScope 分析 LLVM IR（`.ll` / `.bc`），报告可能的内存、所有权、资源和 FFI 边界问题。它适合在源码级工具到达语言边界后继续追问：这个指针或资源从哪里来、流向哪里、最终应该由谁释放。
+OmniScope 是一个面向 LLVM IR（`.ll` / `.bc`）的静态分析器，用于审计 C、C++、Rust、Zig、Go、Java、Python、C# 之间的内存、所有权、资源和 FFI 边界风险。报告是审计证据，不等同于已确认漏洞。
 
-它不是证明工具。报告应当作为审计证据，而不是已确认漏洞清单。
+Rust 版本正在开发中，敬请期待。该版本会尝试用不同的解题思路解决同一个跨语言安全分析问题。
 
 当前版本：`0.2.0`。
 
-[English README](./README.md) | [English docs](./docs/en/README.md) | [中文文档](./docs/zh/README.md) | [发布说明](./RELEASE_NOTES.md) | [更新日志](./CHANGELOG.md)
-
-## OmniScope 检测什么
-
-```mermaid
-flowchart LR
-    IR[LLVM IR] --> Lang[语言检测]
-    Lang --> Single{单语言?}
-    Single -- 是 --> Safety[Safety Pipeline]
-    Single -- 混合 --> Full[完整 FFI Pipeline]
-    Safety --> Gate[Issue Gate]
-    Full --> Gate
-    Gate --> Out[文本 / JSON / SARIF]
-```
-
-- **跨语言释放** — C `free()` 释放 Rust `Box::into_raw()` 指针、Go `_cgo_allocate` + C `free()`、C++ `operator delete` 释放 `malloc` 分配的指针
-- **释放后使用 / 双重释放** — 包括 Rust Drop 插入路径和 C++ RAII 析构函数插入
-- **内存泄漏** — FFI 边界处分配/释放不匹配、缺失 `Drop` 实现
-- **缓冲区溢出** — FFI 边界处的未检查 `memcpy`/`strcpy`/`sprintf`、size 类型截断
-- **FFI 不安全调用** — 带用户可控输入的 `system()`/`popen()`/`execvp()`
-- **所有权转移** — `Box::into_raw()`、`CString::into_raw()`、`Vec::into_raw()` 调用方承担释放责任
-- **回调逃逸** — 函数指针存储到超出调用方生命周期的全局/长生命周期结构体
-- **ABI 不匹配** — `extern "C"` vs C++ mangling、JNI 引用不匹配、Go CGO 指针传递
+[English README](./README.md) | [用户故事](./docs/touser/zh/ToUser.md) | [English docs](./docs/en/README.md) | [中文文档](./docs/zh/README.md) | [发布说明](./RELEASE_NOTES.md)
 
 ## 架构
 
 ```mermaid
 flowchart TD
-    IR[LLVM IR 输入] --> Load[IR 加载器 + 调试信息]
-    Load --> SRT[语义解析树]
-    Load --> SG[符号图]
-    SRT --> Pipe[分析流水线 - 26 个 pass]
-    SG --> Pipe
-    Pipe --> Gate[Issue Gate + 置信度评分]
-    Gate --> Filter[噪音 / 抑制 / FP Guard]
-    Filter --> Out[文本 / JSON / SARIF]
+    CLI[CLI / 配置] --> Loader[IR Loader]
+    Loader --> Module[LLVM Module + Debug Info]
+    Module --> IRStore[ModuleIRStore + InstCache]
+    Module --> Lang[语言检测 + 覆盖规则]
+    Module --> Sem[语义注册表 / 资源契约]
+    IRStore --> CallIdx[CallSiteIndex 预构建]
+    CallIdx --> Adapter[Language Adapter Registry]
+    Lang --> Adapter
+    Adapter --> MemGraph[MemoryGraph + 容器类型推断]
+    Sem --> MemGraph
+    CallIdx --> Pipeline[Pass Manager]
+    MemGraph --> Pipeline
+    Pipeline --> Facts[FactStore + QueryEngine]
+    Pipeline --> DFG[DataFlowGraph]
+    Pipeline --> Issues[Issue 候选]
+    Issues --> Verify[Issue Verifier + Candidate Builder]
+    Verify --> Agg[DiagnosticAggregator 去重]
+    Agg --> Filter[Surface Filter / Noise Gate / Severity Gate / Leak Threshold]
+    Filter --> Leak[后置泄漏分析]
+    Leak --> Output[Text / JSON / SARIF / HTML Graph]
 ```
-
-- **SRT** — 15+ 语义类型用于 FP 抑制
-- **符号图** — 每符号语言/ABI 分类 + 导出面检测
-- **Issue Gate** — 10 种抑制判定；仅置信度 ≥ 0.85 的 issue 通过
-- **26 个分析 pass** — 基础、surface 分类、FFI 边界、指针生命周期、释放校验、Rust FFI、回调逃逸、缓冲区溢出等
-
-### Pipeline 结构
 
 ```mermaid
-flowchart TD
-    Base[CFG / DFG / Alias] --> Calls[Call Graph]
-    Calls --> Flow[Pointer Flow]
-    Calls --> Lifetime[Pointer Lifetime]
-    Flow --> FFI[FFI Boundary / Type / ABI / Layout / String / Unwind]
-    Lifetime --> Danger[Danger Surface]
-    Danger --> Boundary[FFI Boundary]
-    Boundary --> Ownership[跨语言检查]
-    Danger --> Safety[Memory Safety / Free Validation]
-    Safety --> Issues[Issues]
-    FFI --> Issues
-    Ownership --> Issues
+flowchart LR
+    Input[".ll / .bc 文件"] --> Load[加载 LLVM Module]
+    Load --> Pre["预处理: 语言检测 + CallSiteIndex + Adapter + 容器推断"]
+    Pre --> Phase1["阶段1 基础: CFG → DFG → Alias → CallGraph"]
+    Phase1 --> Phase2["阶段2 分类: Surface + Semantic + Danger"]
+    Phase2 --> Phase3["阶段3 FFI: Boundary + Type + ABI + Body + Detector"]
+    Phase3 --> Phase4["阶段4 Issue: Lifetime + Ownership + Memory + Free + Overflow"]
+    Phase4 --> Phase5["阶段5 运行时: Rust-FFI + JNI + GC + Callback + Lock + Error"]
+    Phase5 --> Phase6["阶段6 跨语言: DataFlow + Taint"]
+    Phase6 --> Post["后处理: 泄漏扫描 + 去重 + 置信度过滤"]
+    Post --> Report[Text / JSON / SARIF / HTML]
 ```
 
-## 准确率（v0.2.0）
+## Pass 职责
 
-| 指标 | v0.1.x | v0.2.0 | 变化 |
-|------|--------|--------|------|
-| 总 issue 数（42 项目） | ~2,955 | ~1,100 | -63% |
-| 估计 FP 数量 | ~1,966 | < 110 | -94% |
-| FFI 边界精确率 | ~20% | 60%+ | +200% |
-| 红队 TP 率 | ≥ 90% | ≥ 90% | 维持 |
-| 双重释放检测率 | — | 100% | — |
-| 跨语言释放检测率 | — | 87% | — |
-| 释放后使用检测率 | — | 80% | — |
+| Pass 组 | Passes | 职责 |
+|---|---|---|
+| 基础 | `cfg`, `dfg`, `alias`, `call-graph` | 构建控制流、数据流、别名事实和调用关系。 |
+| 分类 | `surface-classifier`, `semantic-resolver`, `danger-surface` | 分类用户代码、运行时、FFI surface 和语义风险区。 |
+| 流与生命周期 | `taint-propagation`, `ptr-lifetime`, `pointer-ownership`, `cross-lang-dataflow` | 跟踪指针/资源流动、生命周期、所有权和边界传播。 |
+| FFI 边界 | `ffi-detector`, `ffi-boundary`, `ffi-type-mismatch`, `abi-compat-checker`, `ffi-body-check` | 识别 FFI 调用/导出，以及 ABI、类型、函数体风险。 |
+| FFI 安全 | `ffi-analysis-wrapper`, `ffi-unsafe`, `layout-mismatch`, `string-safety-ffi`, `unwind-boundary` | 检测 unsafe API、布局/字符串/unwind 问题和所有权违规。 |
+| 内存/资源 | `malloc-check`, `free-validation`, `memory-safety`, `return-check`, `buffer-overflow`, `integer-overflow` | 检测分配、释放、返回值、溢出和释放后使用等问题。 |
+| 运行时规则 | `rust-ffi-auditor`, `jni-leak-detector`, `gc-safety`, `callback-escape`, `callback-lifecycle`, `lock`, `error-propagation-tracer` | 应用 Rust FFI、JNI、GC、回调、锁和错误传播规则。 |
 
-### 已知限制
+Pass Manager 会解析依赖、按拓扑序运行、可选记录性能数据，并在单个 pass 失败时尽量降级继续。
 
-- **缓冲区溢出**：FFI size 截断和 sprintf 已可检测，但通用模式检测不完整 — 计划 v0.2.1
-- **`ffi_unsafe_call` 噪音**：约 90% issue 量为低置信度噪音 — 部分修复，完整修复需要 Batch 3 重构
-- **`cross_language_free` 门控**：`free_validation.zig` 依赖 `DangerSurfacePass`；当 `danger_surface_relevant` 为空时 pass 可能无产出
-- **Rust mangled alloc 追踪**：`_R` 前缀的分配器符号不被 `isAllocFunction()` 识别
-- **缺少 pass 依赖声明**：`layout_mismatch`、`string_safety_ffi`、`unwind-boundary` 的 `deps` 为空，但实际依赖 FFI 边界状态
-
-## 构建和运行
-
-需要 Zig ≥ 0.15.2 和 LLVM 22。
+## CLI
 
 ```bash
 zig build -Doptimize=ReleaseFast
-./zig-out/bin/OmniScope path/to/input.bc --json
-./zig-out/bin/OmniScope path/to/input.bc --sarif -o results.sarif
+./zig-out/bin/OmniScope input.bc
+./zig-out/bin/OmniScope input.bc --json -o report.json
+./zig-out/bin/OmniScope input.bc --sarif -o report.sarif
+./zig-out/bin/OmniScope rust.bc c.bc
 ```
 
+| 命令 / 选项 | 含义 |
+|---|---|
+| `<input.ll/bc> [...]` | 分析单文件；传入 2 个以上文件会启用多文件跨语言匹配。 |
+| `--json`, `--sarif`, `-o/--output <file>` | 选择机器可读输出和输出文件。 |
+| `--visualize` / `--viz` | 在 `output/<input>/` 下生成 HTML issue 图。 |
+| `--focus-user-code`, `--no-focus-user-code`, `--include-stdlib` | 控制标准库/编译器噪音过滤。 |
+| `--ffi-only`, `--boundary-only`, `--show-surface <list>` | 限制报告到 FFI、边界或指定 surface。可选：`boundary`, `ffi`, `reachable`, `internal`, `runtime`。 |
+| `--min-severity <low|medium|high|critical>` | 过滤低于指定严重度的 issue。 |
+| `--leak-threshold <0.0-1.0>`, `--no-zig-tracking` | 调整泄漏置信度阈值和 Zig allocator 跟踪。 |
+| `--lang <name=lang>`, `--lang-prefix <prefix=lang>`, `--lang-suffix <suffix=lang>`, `--source-lang <file:lang>`, `--default-lang <lang>` | 覆盖语言检测。语言：`c`, `cpp`, `rust`, `zig`, `go`, `java`, `python`, `csharp`。 |
+| `--report-surfaces` | 在 JSON 中加入 FFI 可见导出 surface。 |
+| `--perf-stats`, `--perf-json <path>` | 打印/导出每个 pass 的时间和内存统计。 |
+| `--config <file>`, `--init-config` | 加载 JSON 配置或生成 `omniscope.json`。自动发现 `./omniscope.json` 和 `~/.config/omniscope/config.json`。 |
+| `-v/--verbose`, `-d/--debug`, `-q/--quiet`, `--debug-resource-contract` | 控制日志和资源契约调试。 |
+| `-h/--help`, `--version` | 打印帮助或版本。 |
+
+## 面向用户的说明
+
+`docs/touser/` 解释了 OmniScope 要解决的问题：编译器和大多数分析器只理解单一语言，而 FFI bug 往往出现在运行时交接处。建议先读：
+
+- [中文：写给每一个被 FFI 坑过的人](./docs/touser/zh/ToUser.md)
+- [English: To Everyone Who's Been Burned by FFI](./docs/touser/en/ToUser.md)
+
+## 构建和验证
+
 ```bash
-# 按严重度和边界过滤
-./zig-out/bin/OmniScope input.bc --boundary-only --min-severity high --json
-
-# 语言覆盖（用于歧义模块）
-./zig-out/bin/OmniScope input.bc --lang-prefix sqlite3_=c --default-lang rust
-
-# 导出面报告
-./zig-out/bin/OmniScope input.bc --report-surfaces --json
-
-# 聚焦用户代码，抑制 stdlib/编译器噪音
-./zig-out/bin/OmniScope input.bc --focus-user-code --json
+zig build
+zig build test
+make baseline-check
+make corpus-check
 ```
 
-## 测试和验证
+需要 Zig >= `0.15.2` 和 LLVM 22。
 
-```bash
-zig build                  # 编译
-zig build test             # 运行测试（87 个内联 IR 测试）
-make baseline-check        # 检查预期结果
-make corpus-check          # 运行语料库验证
+## 致谢
+
+特别感谢 [@icehawk-hyb](https://github.com/icehawk-hyb) 担任技术顾问，并在跨语言安全分析方向提供关键指导。
+
+## 引用
+
+如果你在研究中使用 OmniScope，请引用：
+
+```shell
+@tool{omniscope,
+  title = {OmniScope: Cross-Language FFI and Memory Safety Static Analyzer},
+  author = {TimWood},
+  year = {2026},
+  url = {https://github.com/Timwood0x10/OmniScope}
+}
 ```
 
 ## 开源协议

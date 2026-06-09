@@ -468,3 +468,24 @@ pub fn iterateCallArgs(
         try callback(arg, i);
     }
 }
+
+/// Guard against stale LLVMValueRef from LLVMGetNextInstruction.
+///
+/// On certain IR modules (C++ exception handling / landing pads),
+/// LLVMGetNextInstruction may return a pointer that is non-null but
+/// points to freed or invalid memory. Calling LLVMGetInstructionOpcode
+/// on such a pointer triggers a segfault (General protection exception).
+///
+/// LLVMIsAInstruction returns null for invalid refs, making it a safe
+/// pre-check before any LLVM C API call that dereferences the instruction.
+///
+/// Usage in BB instruction traversal:
+///   var inst = c.LLVMGetFirstInstruction(bb);
+///   while (@intFromPtr(inst) != 0) {
+///       if (!llvm_safe.isValidInstruction(inst)) break;
+///       // safe to use inst
+///       inst = c.LLVMGetNextInstruction(inst);
+///   }
+pub fn isValidInstruction(inst: c.LLVMValueRef) bool {
+    return c.LLVMIsAInstruction(inst) != null;
+}

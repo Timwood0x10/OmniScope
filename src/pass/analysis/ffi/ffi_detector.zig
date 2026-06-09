@@ -32,6 +32,10 @@ const symbol_graph = @import("../../../ffi/symbol_graph.zig");
 const llvm_safe = @import("../../../ir/llvm_safe.zig");
 const c = @import("../../../ir/llvm_raw.zig").c;
 
+fn nullFunction() llvm_safe.Function {
+    return .{ .raw = null };
+}
+
 /// FFI vulnerability severity (legacy compatibility)
 pub const FFISeverity = enum {
     low,
@@ -259,13 +263,13 @@ pub const FFIDetector = struct {
             const declare_info = FunctionInfo{
                 .name = name_copy,
                 .kind = .declare,
-                .func = undefined,
+                .func = nullFunction(),
                 .is_external = site.callee.kind == .declare,
             };
             const define_info = FunctionInfo{
                 .name = caller_name_copy,
                 .kind = .define,
-                .func = undefined,
+                .func = nullFunction(),
                 .is_external = false,
             };
 
@@ -301,13 +305,13 @@ pub const FFIDetector = struct {
             const declare_info = FunctionInfo{
                 .name = name_copy,
                 .kind = .declare,
-                .func = undefined,
+                .func = nullFunction(),
                 .is_external = true,
             };
             const define_info = FunctionInfo{
                 .name = name_copy,
                 .kind = .define,
-                .func = undefined,
+                .func = nullFunction(),
                 .is_external = false,
             };
 
@@ -363,13 +367,13 @@ pub const FFIDetector = struct {
             const declare_info = FunctionInfo{
                 .name = name_copy,
                 .kind = .declare,
-                .func = undefined,
+                .func = nullFunction(),
                 .is_external = true,
             };
             const define_info = FunctionInfo{
                 .name = caller_name_copy,
                 .kind = .define,
-                .func = undefined,
+                .func = nullFunction(),
                 .is_external = false,
             };
 
@@ -703,11 +707,18 @@ pub const FFIDetector = struct {
         // Guard: synthetic matches from cross-edge data may not have an actual
         // LLVM function reference. Skip IR-based body inspection in that case.
         if (@intFromPtr(func.func.raw) == 0) return null;
+        if (c.LLVMIsAFunction(func.func.raw) == null) return null;
 
         var bb = c.LLVMGetFirstBasicBlock(func.func.raw);
         while (@intFromPtr(bb) != 0) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) {
+                // Guard: LLVMGetNextInstruction may return a stale pointer
+                // on certain IR modules (C++ exception handling / landing pads).
+                // LLVMIsAInstruction returns null for invalid refs, preventing
+                // segfault on LLVMGetInstructionOpcode.
+                if (!llvm_safe.isValidInstruction(inst)) break;
+
                 const opcode = c.LLVMGetInstructionOpcode(inst);
 
                 if (llvm_safe.isCallOrInvoke(opcode)) {
@@ -748,6 +759,12 @@ pub const FFIDetector = struct {
         while (@intFromPtr(bb) != 0) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) {
+                // Guard: LLVMGetNextInstruction may return a stale pointer
+                // on certain IR modules (C++ exception handling / landing pads).
+                // LLVMIsAInstruction returns null for invalid refs, preventing
+                // segfault on LLVMGetInstructionOpcode.
+                if (!llvm_safe.isValidInstruction(inst)) break;
+
                 const opcode = c.LLVMGetInstructionOpcode(inst);
 
                 if (llvm_safe.isCallOrInvoke(opcode)) {
@@ -794,6 +811,9 @@ pub const FFIDetector = struct {
         var inst = c.LLVMGetFirstInstruction(bb);
 
         while (@intFromPtr(inst) != 0) {
+            // Guard: LLVMGetNextInstruction may return stale pointer
+            if (!llvm_safe.isValidInstruction(inst)) break;
+
             if (found_after_inst) {
                 // Check if this instruction uses the pointer
                 const num_operands = c.LLVMGetNumOperands(inst);
@@ -821,6 +841,9 @@ pub const FFIDetector = struct {
         while (@intFromPtr(bb) != 0) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (@intFromPtr(inst) != 0) {
+                // Guard: LLVMGetNextInstruction may return stale pointer
+                if (!llvm_safe.isValidInstruction(inst)) break;
+
                 const opcode = c.LLVMGetInstructionOpcode(inst);
 
                 if (opcode == c.LLVMAdd or opcode == c.LLVMSub or
@@ -886,6 +909,9 @@ pub const FFIDetector = struct {
         while (bb != null) : (bb = c.LLVMGetNextBasicBlock(bb)) {
             var inst = c.LLVMGetFirstInstruction(bb);
             while (inst != null) : (inst = c.LLVMGetNextInstruction(inst)) {
+                // Guard: LLVMGetNextInstruction may return stale pointer
+                if (!llvm_safe.isValidInstruction(inst)) break;
+
                 const opcode = c.LLVMGetInstructionOpcode(inst);
                 if (opcode != c.LLVMCall and opcode != c.LLVMInvoke) continue;
 
@@ -1021,14 +1047,14 @@ test "FFIVulnerability - vulnerability creation" {
     const mock_declare = FunctionInfo{
         .name = "test_declare",
         .kind = .declare,
-        .func = undefined,
+        .func = nullFunction(),
         .is_external = true,
     };
 
     const mock_define = FunctionInfo{
         .name = "test_define",
         .kind = .define,
-        .func = undefined,
+        .func = nullFunction(),
         .is_external = false,
     };
 

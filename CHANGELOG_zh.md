@@ -5,148 +5,51 @@ OmniScope 的所有重要变更都将记录在此文件。
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/spec/v2.0.0.html)。
 
-## [0.2.0] - 2026-05-26
+## [0.2.0] - 2026-06-09
 
 ### 发布重点
 
-OmniScope 0.2.0 将 0.1.9 的稳定性修复与新的语义解析、Surface Classifier、跨语言 FFI 证据链能力合并发布。本次版本引入 **SRT（Semantic Resolution Tree，语义解析树）架构**——统一的误报抑制系统，在保持红队测试真阳性率 ≥90% 的同时，将误报数量减少约 94%（估计值，基于代表性样本人工审计）。
+OmniScope 0.2.0 合并 0.1.9 稳定性修复，并完成一次面向语义分析和多语言 FFI 的大规模重构。相对 `master`，本版本新增语义解析、surface 分类、资源契约、语言覆盖、Symbol Graph 导出面、更完整的 FFI 检查，以及更大的测试和语料矩阵。
 
 > **注意**：本版本不单独发布 0.1.9，相关修复内容已并入 0.2.0。
 
-### 架构升级：SRT（语义解析树）
-
-**SemanticKind 枚举从 4 种扩展至 15+ 种变体**，以覆盖跨语言 FFI 模式：
-
-| 类别 | SemanticKind 变体 | 用途 |
-|------|------------------|------|
-| **遗留类型** | `unknown`, `allocation`, `release`, `provenance` | 原始 4 种（保留） |
-| **R-0: LLVM 属性** | `readonly_param`, `mutable_param` | 参数属性检测（覆盖约 1877 个 write_to_immutable 类型 FP） |
-| **R-1: 来源追溯** | `heap_provenance`, `global_provenance` | Box/Arc/Rc/Vec 与静态/常量来源的区分 |
-| **R-2: 内部可变性** | `interior_mutability` | UnsafeCell/OnceLock/Cell/RefCell/Mutex/RwLock/Atomic* 模式 |
-| **R-3: RAII** | `raii_drop_release` | 编译器插入的 Drop/dealloc 模式 |
-| **R-4: 系统调用** | `file_operation`, `network_operation`, `process_operation` | POSIX 系统调用分类 |
-| **R-5: 语言门控** | *(检测路由)* | 模块语言检测，用于 detector 路由 |
-| **R-6: 所有权转移** | `into_raw_transfer` | Box/CString/Vec::into_raw 所有权转移模式 |
-| **R-7: 库释放** | `library_release` | mimalloc/zlib/openssl/sqlite 等库的 dealloc 操作 |
-| **R-8: 参数来源** | `from_parameter` | 函数参数来源（非栈逃逸） |
-| **多语言支持** | Python (5), Go (4), C# (3), Java (3), C++ (4) | 语言特定语义 |
-
-### 新增：9 个 IR Pattern Detectors（R-0~R-8）
-
-每个 detector 向 SRT 填充语义解析结果：
-
-| Detector | 文件路径 | 检测目标 | 覆盖的 FP 类型及数量（估计值） |
-|----------|---------|---------|------------------------------|
-| **R-0: ParamAttr Detector** | `src/semantics/patterns/param_attr.zig` | LLVM readonly/mutable 属性 | ~1877 FP (write_to_immutable) |
-| **R-1: HeapProvenance Detector** | `src/semantics/patterns/heap_provenance.zig` | Box/Arc/Rc/Vec 来源识别 | ~300 FP (borrow_escape) |
-| **R-2: InteriorMutability Detector** | `src/semantics/patterns/interior_mut.zig` | UnsafeCell/Cell/RefCell/Mutex | ~150 FP (write_to_immutable) |
-| **R-3: RAII Detector** | `src/analysis/raii_detector.zig` | C++ 析构函数、Rust Drop | ~200 FP (use_after_free) |
-| **R-4: Syscall Classifier** | `src/semantics/patterns/syscall_class.zig` | POSIX 文件/网络/进程操作 | ~100 FP (cross_language_free) |
-| **R-5: LangDetector** | `src/semantics/patterns/lang_detector.zig` | 模块语言门控 | 启用语言特定路由 |
-| **R-6: IntoRawTransfer Detector** | `src/semantics/patterns/into_raw_transfer.zig` | Box::into_raw 模式检测 | ~180 FP (cross_language_free) |
-| **R-7: LibraryRelease Detector** | `src/semantics/patterns/library_release.zig` | 自定义 allocator dealloc | ~80 FP (invalid_free) |
-| **R-8: ParamSource Detector** | `src/semantics/patterns/param_source.zig` | 函数参数来源识别 | ~120 FP (borrow_escape) |
-
-### 新增：Issue Gate（统一抑制机制）
-
-**文件**: `src/pass/filter/issue_gate.zig`
-
-每个 issue 在输出前必须通过 Issue Gate。Gate 查询 SRT 获取语义解析结果：
-
-```zig
-pub fn checkIssue(srt: *const SemanticTree, value_ref: u64, kind: IssueKind) GateVerdict
-```
-
-**Gate 判定结果**（10 种抑制理由 + 允许）：
-
-| 判定结果 | Detector | 抑制的 Issue 类型 |
-|---------|----------|------------------|
-| `suppress_mutable_param` | R-0 | write_to_immutable |
-| `suppress_interior_mut` | R-2 | write_to_immutable |
-| `suppress_heap_origin` | R-1 | borrow_escape |
-| `suppress_global_origin` | R-1 | borrow_escape |
-| `suppress_raii` | R-3 | use_after_free |
-| `suppress_non_memory_syscall` | R-4 | cross_language_free |
-| `suppress_ownership_transfer` | R-6 | cross_language_free |
-| `suppress_library_release` | R-7 | invalid_free, cross_language_free |
-| `suppress_parameter_source` | R-8 | borrow_escape |
-| `allow` | — | issue 通过检查 |
-
-**增强功能**：
-- 冲突检测：若值同时具有可抑制和不可抑制的类型 → 允许通过（保守策略）
-- 置信度阈值：仅当解析置信度 ≥ 0.85 时执行抑制
-- 二次验证：针对每种 issue 类型的附加安全检查
-
-### 新增：Confidence Scorer（4 级评分系统）
-
-**文件**: `src/pass/analysis/resource/issue_verifier.zig`
-
-**阈值设定**：
-- **HIGH** ≥ 0.75：多重交叉验证信号（始终报告）
-- **MEDIUM** ≥ 0.55：单一强信号（默认报告）
-- **LOW** ≥ 0.35：启发式匹配（需人工审核）
-- **UNRELIABLE** < 0.35：实验性（默认抑制）
-
-**评分参数表**：
-
-| 类别 | 加分 | 扣分 |
-|------|-----|------|
-| 具体执行路径 | +0.12 | — |
-| 跨家族不匹配 | +0.15 | 同家族: -0.10 |
-| 所有权违规 | +0.12 | — |
-| FFI 边界 | +0.10 | 运行时内部: -0.08 |
-| use-after-release | +0.18 | 有效逃逸: -0.15 |
-| double release | +0.18 | 有效析构函数: -0.12 |
-
-### FP 抑制结果（实测数据）
-
-| 指标 | v0.1.x（基线） | v0.2.0（SRT 后） | 变化 |
-|------|---------------|-----------------|------|
-| 总 issue 数（42 个项目） | ~2,955 | ~1,100+ | **-63%** |
-| 估计 FP 数量 | ~1,966 | **<110** | **-94% 减少** |
-| FFI 边界精确率 | ~20% | **60%+** | **相对提升约 200%** |
-| 红队 TP 率 | ≥90% | **≥90%** | 保持不变 |
-| 分析开销增加 | 基线 | <5% 增加 | 可接受范围 |
-
-> **测量方法说明**：FP 估计值来源于对代表性样本的人工审计，涵盖 C 库、Rust FFI、C++ STL、Go CGo 等项目类别。实际 FP 数量因项目特性而异。详细分解见 `docs/code_review_v0.2.0.md`。
->
-> **已知限制**：
-> - 部分复杂所有权模式（如 Rust async/await 中的 Pin<P>）尚未完全覆盖
-> - 多线程场景下的 data race 检测仍为实验性功能
-> - C++ template 元编程的某些极端情况可能产生残留 FP
-
 ### 新增（Added）
 
-- 通用语义解析流水线：识别编译器/运行时符号、语言属性、平台运行时画像和 ABI 相关语义。
-- 四层 Surface Classifier：结合边界识别、调用图上下文、链接属性、符号名解析、平台线索和 debug-origin 证据。
-- 平台 profile 与跨语言检测增强，覆盖 C/C++、Rust、Zig、Go/TinyGo、Python、Java/JNI、C#/.NET 等 FFI 场景。
-- 模块级 IR 证据收集：报告可以解释函数为什么被视为用户代码、运行时代码、编译器生成代码或 FFI 边界。
-- 并行分析支持、pass 级性能 profiling、pass context bump-pointer arena、字符串 interning 等性能基础设施。
-- 扩展红队语料：C++ operator `new`、Rust FFI、Go CGo/TinyGo、Python CFFI、Java JNI、C#/.NET、Zig `@cImport`。
+- Semantic Resolution Tree、pattern detectors、语义注册表集成、平台/运行时 profile，以及基于 Issue Gate 的抑制机制。
+- Symbol Graph：按符号进行语言/ABI 分类，并支持 FFI 导出 surface 报告。
+- 资源模型：resource family、函数 summary、transfer inference、issue candidate 和 issue verifier。
+- 语言 adapter 与语言覆盖系统，用于处理歧义或混合语言 LLVM IR。
+- FFI pass：ABI 兼容、类型不匹配、布局不匹配、字符串安全、unwind 边界、callback 生命周期、GC 安全、JNI 泄漏、跨语言数据流。
+- CLI 新增 `--report-surfaces`、语言覆盖、配置加载/生成、surface 过滤、泄漏阈值、Zig allocator tracking、per-pass 性能统计。
+- IRStore、instruction cache、traversal index、arena、string interning、prefix trie、Aho-Corasick matcher 和并行 pipeline 脚手架。
+- inline IR 测试、跨语言集成 fixture、golden baseline 文档、语料验证脚本和 CI workflow 覆盖。
 
 ### 变更（Changed）
 
-- 将分析代码拆分为更聚焦的 `ptr_lifetime`、`ffi`、`rust_ffi`、`taint`、`noise`、`types`、`pipeline` 等模块。
-- 语言方向上用 C#/.NET FFI 支持替换原 Swift 方向。
-- 改进 Rust allocator 符号、C/C++ mangled deallocator、所有权转移、callback escape、write-to-immutable、use-after-free 等模式识别。
-- 通过 C++ 内部泄漏 gate、issue suppression、vulnerability rules、runtime filter 和语言感知语义分类降低误报。
+- 将分析代码重组到 `src/pass/analysis/{ffi,ptr_lifetime,rust_ffi,noise,resource,taint}` 等聚焦模块。
+- 将共享类型和工具迁移到 `src/types`、`src/common`、`src/resource`、`src/semantics/resource`。
+- 重做 pipeline 编排：集中 pass 注册、依赖解析、PassContext 实现、单文件/多文件 runner。
+- 文档重组为 `docs/en`、`docs/zh` 和 `docs/touser`，并更新 README 架构图、CLI 和 pass 职责。
+- 扩展 C、C++、Rust、Zig、Go、Java、Python、C#/.NET FFI 的语言配置。
 
 ### 修复（Fixed）
 
-- 修复 Rust Drop 语义、allocator callee tracking、C/Rust 所有权转换相关的跨语言 free 误报。
-- 修复 FFI Boundary issue 生成与依赖顺序，让下游 pass 能使用边界证据。
-- 修复多个分析基础设施和报告生成中的 leak/OOM 路径。
-- 合并 0.1.9 中版本号、SARIF CWE 映射和性能优化相关稳定性修复。
+- 统一 0.2.0 CLI 与输出路径中的版本号。
+- 修复代码审查发现的多个内存泄漏、double-free 风险、OOM 处理路径和静默丢诊断问题。
+- 修复 C/C++ 模块的 FFI boundary 处理和下游 pass 依赖。
+- 修复 Rust allocator/drop 语义、C/C++ allocator/deallocator 分类、所有权转移抑制、callback escape 和跨语言 free 误报。
+- 修复元数据较弱或歧义模块中的语言检测与覆盖行为。
 
 ### 文档（Documentation）
 
-- 新增 `docs/en/REPORT_INTERPRETATION.md` 与 `docs/zh/REPORT_INTERPRETATION.md`，结合仓库示例说明如何解读分析结果。
-- 更新 README 与文档索引，修正重组后的 `docs/en`、`docs/zh` 链接。
-- 架构文档更新：新增 SRT 层、Issue Gate 和 Confidence Scorer 组件说明。
+- 新增和更新 `docs/en` 下的 quick start、API reference、architecture、modules、passes、compiler IR patterns 和语言 IR specs。
+- 新增和更新 `docs/zh` 下的架构、模块、pass、报告解读、compiler IR patterns、baseline spec 和语言 IR specs。
+- 新增 `docs/touser/en/ToUser.md` 与 `docs/touser/zh/ToUser.md`，解释 OmniScope 面向用户的 FFI 内存安全问题背景。
+- README 与 README_zh 更新为精简版：包含架构/数据流 Mermaid 图、pass 职责、CLI 参考和 `docs/touser` 链接。
 
 ## [0.1.9] - 2026-05-22
 
-> **发布计划更新**：0.1.9 的修复内容会并入 0.2.0 发布线。合并版发布说明见 `RELEASE_NOTE.md`。
+> **发布计划更新**：0.1.9 的修复内容会并入 0.2.0 发布线。合并版发布说明见 `RELEASE_NOTES.md`。
 
 ### Bug 修复与性能优化
 
@@ -500,7 +403,7 @@ LLVM 操作数索引标准化、trace deep-copy 双重释放防护、off-by-one 
 
 | 版本 | 日期 | 主要特性 | 关键指标 |
 |------|------|---------|---------|
-| **v0.2.0** | **2026-05-26** | **SRT 架构 + FP 抑制系统** | **FP -94%**, **TP ≥90%**, **9 detectors** |
+| **v0.2.0** | **2026-06-09** | **语义分析 + 多语言 FFI** | **SRT、Symbol Graph、资源契约、扩展 CLI/测试** |
 | **v0.1.7** | **2026-05-07** | **全面 Bug 修复 (Round 7+8)** | **67 bugs**, **343 tests**, **20 Issue Kinds** |
 | **v0.1.6** | **2026-05-04** | **Rust FFI 检测恢复** | TP **20%**, 覆盖率 **92%**, **191 tests** |
 | v0.1.5 | 2026-04-25 | Zone Classification | 跳过率 **60%+** |

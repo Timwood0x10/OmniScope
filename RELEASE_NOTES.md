@@ -1,147 +1,108 @@
-# OmniScope 0.2.0 Release Note
+# OmniScope 0.2.0 Release Notes
 
-**Release train**: 0.1.9 → 0.2.0  
-**Release date**: 2026-06-08  
-**Status**: 0.1.9 is folded into 0.2.0 and is not planned as a separate public release.
+**Release train**: 0.1.9 -> 0.2.0
+**Release date**: 2026-06-09
+**Status**: Ready for 0.2.0 release candidate review.
 
 ## Summary
 
-OmniScope 0.2.0 is the semantic-analysis release. It combines the 0.1.9 stabilization work with a major refactor around semantic resolution, surface classification, platform runtime profiles, evidence collection, cross-language FFI precision, and a new Symbol Graph architecture.
+OmniScope 0.2.0 is the semantic-analysis and multi-language FFI release. Compared with `master`, this branch replaces the older module-level FFI heuristics with a broader pipeline built around semantic resolution, surface classification, resource contracts, language overrides, Symbol Graph export surfaces, and a larger test/corpus matrix.
 
-The main user-visible improvement is that findings should be easier to trust and explain: the analyzer has more context about why a symbol is a real FFI boundary, which runtime owns an allocation, and whether a report is likely user-code risk or compiler/runtime noise. FP count is reduced by ~94% while maintaining ≥ 90% true-positive rate on red team tests.
+The release keeps the public input/output model simple: LLVM IR in, text/JSON/SARIF reports out. Internally, the analyzer now has more context about which runtime owns a pointer, which symbols are true FFI boundaries, and which findings are likely user-code risks versus runtime/compiler noise.
 
 ## Highlights
 
-- **Semantic Resolution Tree (SRT)**: 15+ semantic kinds for unified FP suppression, with 9 IR pattern detectors (R-0 ~ R-8) and an Issue Gate with 10 suppression verdicts
-- **Symbol Graph**: per-symbol language/ABI classification replacing module-level "dominant language" model, with export surface detection for FFI-exported functions
-- **Surface classification**: layered classification for boundary, call graph, linkage, mangled names, platform clues, and debug-origin evidence
-- **FFI precision**: improved C/Rust allocator matching, Rust Drop semantics, C++ deallocator names, callback escape, ownership transfer, and cross-language free handling
-- **Noise reduction**: ~94% FP reduction (from ~1,966 to < 110 estimated FPs across 42 projects), stronger runtime filters, issue suppression, vulnerability rules, and language-aware classification
-- **Performance**: parallel pipeline support, pass profiling, arena allocation, string interning, IRStore-based traversal, and caching — < 5% overhead
-- **Multi-language**: C/C++, Rust, Zig, Go/TinyGo, Python CFFI, Java JNI, C#/.NET FFI
-- **Corpus coverage**: expanded red-team cases for C++, Rust, Go/TinyGo, Python CFFI, Java JNI, C#/.NET, and Zig `@cImport`
+- **Semantic resolution**: adds a Semantic Resolution Tree, pattern detectors, platform/runtime profiles, and an Issue Gate for evidence-based suppression.
+- **Surface and Symbol Graph classification**: classifies boundary, linkage, mangled-name, debug-origin, call-graph, ABI, and export-surface evidence per symbol.
+- **Resource and ownership analysis**: adds resource families, function summaries, transfer inference, candidate building, and issue verification.
+- **Multi-language FFI support**: expands C/C++, Rust, Zig, Go/TinyGo, Java/JNI, Python C API/CFFI, and C#/.NET handling.
+- **New FFI checks**: adds ABI compatibility, type mismatch, layout mismatch, string safety, unwind boundary, callback lifecycle, GC safety, JNI leak, and cross-language dataflow passes.
+- **CLI and config**: adds JSON config loading/generation, language overrides, surface reporting, focus-user-code filtering, leak thresholds, Zig allocator tracking, and per-pass performance stats.
+- **Performance infrastructure**: adds IRStore, instruction cache, traversal indexing, arenas, string interning, prefix tries, Aho-Corasick matching, and parallel pipeline scaffolding.
+- **Docs and tests**: reorganizes docs into `docs/en` and `docs/zh`, adds `docs/touser`, and expands inline/cross-language integration tests.
 
-## Accuracy
+## User-Visible Changes
 
-| Metric | v0.1.x Baseline | v0.2.0 | Change |
-|--------|-----------------|--------|--------|
-| Total issues (42 projects) | ~2,955 | ~1,100+ | **-63%** |
-| Estimated FP count | ~1,966 | **< 110** | **-94%** ✅ |
-| FFI boundary precision | ~20% | **60%+** | **+200%** ✅ |
-| Red team TP rate | ≥ 90% | **≥ 90%** | Maintained ✅ |
-| Double free detection | — | 100% | ✅ |
-| Cross-language free | — | 87% | ⚠️ |
-| Use-after-free | — | 80% | ⚠️ |
-| Buffer overflow | — | FFI size truncation + sprintf | ✅ |
-| Inline IR tests | — | 52 pass / 87 total (0 fail) | Cross-lang 27/27 ✅ |
+### CLI
 
-## Included from 0.1.9
+New or expanded flags:
 
-0.1.9 focused on correctness and performance fixes. These changes are included in 0.2.0:
+- `--json`, `--sarif`, `-o/--output <file>` for report output.
+- `--visualize` / `--viz` for HTML issue graphs.
+- `--focus-user-code`, `--no-focus-user-code`, `--include-stdlib` for noise control.
+- `--ffi-only`, `--boundary-only`, `--show-surface <boundary|ffi|reachable|internal|runtime>` for report scope.
+- `--min-severity <low|medium|high|critical>` for severity filtering.
+- `--leak-threshold <0.0-1.0>` and `--no-zig-tracking` for leak tuning.
+- `--lang`, `--lang-prefix`, `--lang-suffix`, `--source-lang`, `--default-lang` for language override.
+- `--report-surfaces` to include FFI-visible export surfaces in JSON.
+- `--perf-stats`, `--perf-json <path>` for pass-level profiling.
+- `--config <file>`, `--init-config` for JSON configuration.
 
-- Correct `integer_overflow` IssueKind and CWE-190 SARIF mapping.
-- Memory-leak fixes in call graph error paths.
-- Safer LLVM opcode comparisons in FFI detection.
-- Version consistency across CLI, JSON, and SARIF output.
-- Reduced redundant module traversals in pointer ownership analysis.
-- Faster leak/double-free lookups through existing memory-graph indices.
-- Caches for zone classification and Rust FFI relevance checks.
+### Output
 
-## New in 0.2.0
+- Text, JSON, and SARIF remain supported.
+- JSON can include export-surface details when `--report-surfaces` is enabled.
+- Reports now use stronger filtering and deduplication, so issue counts are expected to differ from v0.1.x baselines.
 
-### Semantic Resolution Tree (SRT)
+## Major Technical Changes
 
-- New `semantic_resolver_pass` with event-driven detector architecture.
-- `SemanticKind` expanded from 4 → 15+ variants covering LLVM attributes, heap provenance, interior mutability, RAII drop, syscalls, language gating, ownership transfer, library release, and parameter source.
-- 9 IR Pattern Detectors (R-0 ~ R-8) populate the SRT with semantic resolutions.
-- **Issue Gate** (`src/pass/filter/issue_gate.zig`): 10 suppression verdicts; issues pass only when confidence ≥ 0.85.
-- **Confidence Scorer** (`src/pass/analysis/resource/issue_verifier.zig`): 4-tier system (HIGH ≥ 0.75, MEDIUM ≥ 0.55, LOW ≥ 0.35, UNRELIABLE < 0.35).
+### Pipeline and Passes
 
-### Symbol Graph
+- Adds centralized pass registration in `src/pipeline_registration.zig`.
+- Splits large analysis code into focused modules under `src/pass/analysis/{ffi,ptr_lifetime,rust_ffi,noise,resource,taint}`.
+- Adds `PassContext` implementation, dependency resolution, graceful pass failure handling, and optional pass profiling.
+- Adds foundation and analysis passes for CFG, DFG, alias, call graph, surface classification, semantic resolution, pointer flow, pointer lifetime, FFI boundary, ABI/type/layout/string/unwind checks, memory safety, free validation, callbacks, locks, GC, JNI, and Rust FFI.
 
-- New `src/ffi/symbol_graph.zig`: per-symbol language/ABI classification with `classifySymbol` covering Rust v0, Rust legacy, C++ Itanium, MSVC, Swift, Go, Zig, and LLVM builtin patterns.
-- Export surface detection: identifies FFI-exported functions even without cross-language callers in the same translation unit.
-- CLI `--report-surfaces` flag for JSON export surface reporting.
-- **Fixed**: pointer lifetime bug in `buildCallSites` — switched to index+deferred-resolution scheme (`cross_lang_call_indices` stores `usize` indices during Phase 2, resolved to `*CallSite` in Phase 2b after call_sites is frozen).
+### Semantic and Resource Model
 
-### Surface classifier
+- Adds semantic tree/resolution engine and pattern detectors for attributes, heap provenance, interior mutability, drop glue, language detection, ownership transfer, and library allocation pairs.
+- Adds platform/runtime normalization, language-specific zone detectors, and allocator knowledge bases.
+- Adds resource families, resource contracts, summaries, ownership state, transfer inference, escape modeling, and issue candidate verification.
 
-- Adds boundary, call graph, debug-origin, linkage, mangled-name, and platform classifiers.
-- Improves detection of real FFI surfaces while suppressing runtime/compiler implementation details.
+### Language Support
 
-### Analysis pipeline
+- Adds adapter framework under `src/lang/` with C++, Go, and Python adapters.
+- Adds config files for C, C++, Rust, Zig, Go, Java, and Python language behavior.
+- Adds language override registry and config support for ambiguous IR.
+- Adds JNI, Go CGo/TinyGo, Zig allocator, Rust FFI, C#/.NET, Python C API/CFFI, C++ allocator/deallocator, and layout/ABI checks.
 
-- Reorganizes pointer lifetime, FFI, Rust FFI, taint, and noise analysis into smaller focused modules (`src/pass/analysis/ptr_lifetime/`, `src/pass/analysis/rust_ffi/`, `src/pass/analysis/ffi/`, `src/pass/analysis/noise/`).
-- Adds parallel analysis scaffolding (`src/pipeline/parallel.zig`) and pass-level performance profiling.
-- Pre-categorized IR Store (`src/ir/ir_store.zig`) eliminates full IR traversal across passes.
-- Moves common data structures into `src/types` and `src/common` to reduce coupling.
+### Documentation
 
-### Language adapters
-
-- Multi-language adapter framework (`src/lang/`): C++, Go, Python adapters with language-specific FFI detection rules.
-- Language override system with JSON config support (`src/config/language_override.zig`).
-- Metadata-based language detection for improved module classification.
-
-### Language-specific detection
-
-- **Rust**: Drop semantics recognition, `Box::into_raw`/`CString::into_raw` ownership transfer suppression, `__rust_alloc`/`__rust_dealloc` allocator family tracking.
-- **C++**: `operator new`/`operator delete` classification, C++ internal leak gate, FP reduction for STL patterns, RAII destructor detection.
-- **Go**: CGo memory safety detection, `_cgo_allocate`/`_cgo_free` tracking, pipeline integration.
-- **Zig**: Allocator tracking config, `@cImport` pattern detection, leak confidence filtering.
-- **Java/JNI**: JNI leak detector pass, `NewGlobalRef`/`DeleteLocalRef` lifecycle tracking.
-- **C#/.NET**: Marshal/P/Invoke boundary analysis (new direction, replaces Swift roadmap focus).
-
-### CLI and output
-
-- `--report-surfaces`: export FFI surface list to JSON output.
-- `--focus-user-code`: suppress stdlib/compiler noise, show only user-code issues.
-- `--lang-prefix` and `--default-lang`: language override for ambiguous modules.
-- Report interpretation guides: `docs/en/REPORT_INTERPRETATION.md` and `docs/zh/REPORT_INTERPRETATION.md`.
-
-## Known Issues
-
-| Issue | Severity | Impact | Status |
-|-------|----------|--------|--------|
-| ~~SymbolGraph pointer lifetime bug~~ | ~~🔴 Critical~~ | ~~Crashes on large IR~~ | **✅ Fixed** (index + deferred resolution) |
-| ~~`cross_language_free` gate too aggressive~~ | ~~🟡 High~~ | ~~Blocks entire pass when `danger_surface_relevant` is empty~~ | **✅ Verified** (core path not blocked; SAME-LANG-MERGE guard + isAbiCompatibleAllocFree fix FP) |
-| `ffi_unsafe_call` noise ~90% | 🟡 High | Precision only 11-14% from overly broad pattern matching | Partially fixed (trust_boundary_indicators/risky_prefixes/safe_name_patterns tightened) |
-| ~~Buffer overflow detection 0%~~ | ~~🟡 High~~ | ~~Function count threshold + missing FFI-boundary patterns~~ | **✅ Fixed** (FFI size truncation → CWE-120 issue + sprintf/%s overflow detection) |
-| Inline IR test pass rate 48.3% | 🟡 Medium | 45/87 warnings (FP on safe code) | Planned (requires Batch 3 architecture refactor) |
-| Rust mangled alloc tracking | 🟠 Medium | `_R`-prefixed symbols not recognized by `isAllocFunction()` | Planned |
-| Library contract DB disconnected | 🟠 Medium | `trackPointerOrigin` doesn't query `contract_db` for `sqlite3_open` etc. | Planned |
-
-See [plan/multilang_precision_90.md](./plan/multilang_precision_90.md) for detailed fix plans.
+- README and README_zh now include concise architecture/data-flow diagrams, pass responsibilities, CLI reference, and `docs/touser` links.
+- English docs live under `docs/en/`; Chinese docs live under `docs/zh/`.
+- `docs/touser/en/ToUser.md` and `docs/touser/zh/ToUser.md` explain the user problem OmniScope targets.
 
 ## Compatibility
 
-- **Input**: LLVM IR (`.ll`) and bitcode (`.bc`) remain the primary inputs.
-- **Output**: text, JSON, and SARIF remain supported.
-- **Breaking changes**: no intentional CLI-level breaking change is documented for this release.
-- **Behavioral changes**: issue counts will differ significantly from v0.1.x because semantic classification suppresses more runtime/compiler noise and identifies more FFI-specific evidence. Expect fewer total issues with higher precision.
+- **Input**: LLVM `.ll` and `.bc`.
+- **Output**: text, JSON, SARIF, optional HTML visualization.
+- **Version**: CLI and output code report `0.2.0`.
+- **Expected behavior change**: issue volume and classification can change significantly because 0.2.0 uses new semantic, surface, and language-aware gates.
 
-## How to read reports
+## Upgrade Guidance
 
-Report interpretation guides:
+1. Rebuild with the project toolchain: Zig >= `0.15.2` and LLVM 22.
+2. Re-run JSON/SARIF baselines; do not assume v0.1.x issue counts are comparable.
+3. Start with `--focus-user-code --boundary-only --min-severity high` for a precise first pass.
+4. Use `--report-surfaces --json` to inspect exported FFI surfaces.
+5. Use language overrides when IR lacks reliable source or mangling metadata.
 
-- English: `docs/en/REPORT_INTERPRETATION.md`
-- 中文: `docs/zh/REPORT_INTERPRETATION.md`
+## Verification Pointers
 
-These guides explain severity, confidence, CWE, function names, FFI boundary evidence, and how to map a report back to source examples.
+Useful commands before tagging:
 
-## Upgrade guidance
+```bash
+zig build
+zig build test
+make check
+make test
+```
 
-1. Rebuild OmniScope with the same Zig/LLVM toolchain used for 0.1.9 validation.
-2. Re-run JSON or SARIF generation for CI baselines — issue counts and classifier explanations will change significantly.
-3. Consider using `--focus-user-code` to reduce noise in initial adoption.
-4. Use `--report-surfaces` to discover FFI-exported functions in your IR modules.
-5. Prioritize `critical` and `high` findings with `HIGH` or `MEDIUM` confidence.
-6. For FFI ownership findings, verify allocator/deallocator families before changing code.
-7. Use SARIF for code scanning and JSON for automated diffing across release baselines.
+The branch also adds inline IR tests, cross-language integration fixtures, golden baseline docs, corpus verification scripts, and CI workflow coverage.
 
-## Known follow-ups
+## Known Follow-Ups
 
-- Batch 3: `hasAuxiliaryEvidence` signature refactor to accept `*PassContext` for IR-level taint evidence and boundary confidence — this is the primary remaining work to reduce `ffi_unsafe_call` noise from ~90% to <20% and improve inline IR test pass rate from 48.3% to ≥80%.
-- Batch 3: `memory_unsafe`/`ownership_violation` precise classification to replace generic `ffi_unsafe_call` categorization.
-- Add deeper custom allocator models for project-specific APIs such as `sqlite3_malloc`/`sqlite3_free`.
-- Extend TinyGo runtime filtering and JDK Unsafe/Panama FFM modeling.
-- Continue improving report evidence so each issue includes a concise source-to-sink explanation.
+- Continue reducing `ffi_unsafe` noise with stronger auxiliary evidence.
+- Expand project-specific allocator contract coverage beyond the bundled registry.
+- Improve report evidence paths for each issue so findings are easier to audit from source to sink.
+- Keep shrinking large analysis modules and generated corpus artifacts where practical.
