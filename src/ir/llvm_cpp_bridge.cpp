@@ -12,8 +12,10 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Error.h"
 #include "llvm-c/Types.h"
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 extern "C" {
 
@@ -40,15 +42,40 @@ int omni_parse_ir_file(const char* path, void* context, void** module_out, char*
 
     if (is_bc) {
         // ── Bitcode (.bc) path ──
-        // Use llvm::parseBitcodeFile via MemoryBuffer.
-        // The C++ API handles LLVM 22 bitcode correctly.
-        auto fileOrErr = llvm::MemoryBuffer::getFile(path);
-        if (!fileOrErr) {
-            if (error_out) *error_out = strdup("Failed to read bitcode file");
+        // Read file using C I/O then wrap in a MemoryBuffer via getMemBufferCopy.
+        // This avoids calling llvm::MemoryBuffer::getFile (which has
+        // std::optional<Align> in its LLVM 22 signature), which causes
+        // an ABI mismatch / undefined symbol error on Linux CI where the
+        // LLVM library was compiled with a different C++ standard library.
+        FILE* fp = fopen(path, "rb");
+        if (!fp) {
+            if (error_out) *error_out = strdup("Failed to open bitcode file");
             return 1;
         }
 
-        auto modOrErr = llvm::parseBitcodeFile((*fileOrErr)->getMemBufferRef(), *ctx);
+        fseek(fp, 0, SEEK_END);
+        long file_size = ftell(fp);
+        if (file_size < 0) {
+            fclose(fp);
+            if (error_out) *error_out = strdup("Failed to determine bitcode file size");
+            return 1;
+        }
+        rewind(fp);
+
+        std::string data;
+        data.resize(static_cast<size_t>(file_size));
+        if (file_size > 0) {
+            size_t nread = fread(&data[0], 1, static_cast<size_t>(file_size), fp);
+            if (nread != static_cast<size_t>(file_size)) {
+                fclose(fp);
+                if (error_out) *error_out = strdup("Failed to read bitcode file");
+                return 1;
+            }
+        }
+        fclose(fp);
+
+        auto memBuffer = llvm::MemoryBuffer::getMemBufferCopy(data, path);
+        auto modOrErr = llvm::parseBitcodeFile(memBuffer->getMemBufferRef(), *ctx);
         if (!modOrErr) {
             if (error_out) {
                 std::string msg;

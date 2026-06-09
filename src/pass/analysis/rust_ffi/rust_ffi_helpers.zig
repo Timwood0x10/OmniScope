@@ -437,4 +437,20 @@ pub fn isPureConsumptionFunction(callee_name: []const u8) bool {
     }
     return false;
 }
-// diagnostic comment
+
+/// Check if a callee is a memory management function (malloc, free, realloc, etc.).
+///
+/// These are well-understood libc APIs whose safety is already covered
+/// by dedicated passes (allocator mismatch, double-free, etc.).
+/// Flagging them as "unsafe FFI" would produce excessive noise.
+pub fn isMemoryManagementFunction(callee_name: []const u8) bool {
+    const mm_fns = [_][]const u8{
+        "malloc",        "calloc", "realloc", "free",
+        "alloca",        "valloc", "pvalloc", "posix_memalign",
+        "aligned_alloc",
+    };
+    for (mm_fns) |fn_name| {
+        if (std.mem.eql(u8, callee_name, fn_name)) return true;
+    }
+    return false;
+}

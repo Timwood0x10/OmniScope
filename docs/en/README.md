@@ -2,7 +2,7 @@
 
 OmniScope is a Zig-based LLVM IR analyzer for memory-safety and FFI-boundary review. It is most useful when the question is not "is this source file valid?" but "what happens when ownership, pointers, callbacks, or runtime contracts cross a language boundary?"
 
-The repository version is `0.2.0` in `VERSION`, `build.zig.zon`, CLI `--version`, JSON output, and SARIF output. The current worktree should still be treated as a release candidate until tests and baselines are reconciled.
+The repository version is `0.2.0` in `VERSION`, `build.zig.zon`, CLI `--version`, JSON output, and SARIF output.
 
 ## Start With The Question
 

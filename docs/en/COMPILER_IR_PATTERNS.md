@@ -1,6 +1,6 @@
 # Compiler IR Patterns for Static Analysis
 
-> Based on actual LLVM IR output from Rust, C++, Go (cgo), Java (JNI), Python (CPython API), Swift, and Zig compilers. All patterns verified against real IR files.
+> Based on actual LLVM IR output from Rust, C++, Go (cgo), Java (JNI), Python (CPython API), C# (.NET FFI), and Zig compilers. All patterns verified against real IR files.
 
 ## Table of Contents
 
@@ -9,7 +9,7 @@
 - [Go (cgo)](#go-cgo)
 - [Java (JNI)](#java-jni)
 - [Python (CPython API)](#python-cpython-api)
-- [Swift](#swift)
+- [C# (.NET FFI)](#c-net-ffi)
 - [Zig](#zig)
 
 ---

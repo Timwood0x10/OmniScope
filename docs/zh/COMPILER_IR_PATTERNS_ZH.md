@@ -1,6 +1,6 @@
 # 编译器 IR 模式与静态分析
 
-> 基于 Rust、C++、Go (cgo)、Java (JNI)、Python (CPython API)、Swift 和 Zig 编译器的实际 LLVM IR 输出。所有模式均经过真实 IR 文件验证。
+> 基于 Rust、C++、Go (cgo)、Java (JNI)、Python (CPython API)、C# (.NET FFI) 和 Zig 编译器的实际 LLVM IR 输出。所有模式均经过真实 IR 文件验证。
 
 ## 目录
 
@@ -9,7 +9,7 @@
 - [Go (cgo)](#go-cgo)
 - [Java (JNI)](#java-jni)
 - [Python (CPython API)](#python-cpython-api)
-- [Swift](#swift)
+- [C# (.NET FFI)](#c-net-ffi)
 - [Zig](#zig)
 
 ---

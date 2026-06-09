@@ -232,7 +232,13 @@ pub const FFIAnalysisPass = struct {
 
             // v0.2.0: Skip compiler-generated and stdlib functions via three-layer noise reduction
             const debug_file_path = extractDebugFilePath(func);
-            const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
+            const raw_classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
+            // Rescue compiler_generated functions that contain FFI alloc/free calls (e.g.,
+            // Rust v0 mangled user functions classified as noise by the `_RNv` prefix).
+            const classification = NoiseReduction.reevaluateWithDangerPath(
+                raw_classification,
+                raw_classification.origin == .compiler_generated and funcHasSemanticFFICall(func),
+            );
             if (classification.origin == .compiler_generated) continue;
             if (classification.origin == .stdlib and !noise_config.include_stdlib) continue;
 
@@ -291,7 +297,11 @@ pub const FFIAnalysisPass = struct {
 
             // v0.2.0: Skip compiler-generated and stdlib functions via three-layer noise reduction
             const debug_file_path = extractDebugFilePath(func);
-            const classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
+            const raw_classification = NoiseReduction.classifyFunction(func_name, debug_file_path, noise_config);
+            const classification = NoiseReduction.reevaluateWithDangerPath(
+                raw_classification,
+                raw_classification.origin == .compiler_generated and funcHasSemanticFFICall(func),
+            );
             if (classification.origin == .compiler_generated) continue;
             if (classification.origin == .stdlib and !noise_config.include_stdlib) continue;
 
@@ -629,6 +639,27 @@ pub const FFIAnalysisPass = struct {
         if (filename_ptr[0] == 0) return null;
 
         return filename_ptr[0..filename_len];
+    }
+
+    /// Quick pre-scan: returns true if func contains any call to a SemanticRegistry function.
+    /// Used to rescue `compiler_generated`-classified functions that are actually FFI
+    /// danger-path code (e.g., Rust v0 mangled user functions like `_RNvC1x3bad3free`
+    /// that call malloc + __rust_dealloc, triggering `_RNv` noise pattern).
+    fn funcHasSemanticFFICall(func: c.LLVMValueRef) bool {
+        var bb = c.LLVMGetFirstBasicBlock(func);
+        while (@intFromPtr(bb) != 0) : (bb = c.LLVMGetNextBasicBlock(bb)) {
+            var inst = c.LLVMGetFirstInstruction(bb);
+            while (@intFromPtr(inst) != 0) : (inst = c.LLVMGetNextInstruction(inst)) {
+                const opcode = c.LLVMGetInstructionOpcode(inst);
+                if (!llvm_safe.isCallOrInvoke(opcode)) continue;
+                const called = c.LLVMGetCalledValue(inst);
+                if (@intFromPtr(called) == 0) continue;
+                const called_name_ptr = c.LLVMGetValueName(called);
+                if (@intFromPtr(called_name_ptr) == 0) continue;
+                if (SemanticRegistry.lookup(std.mem.span(called_name_ptr)) != null) return true;
+            }
+        }
+        return false;
     }
 
     fn detectLanguageWithDwarf(_: *FFIAnalysisPass, func: c.LLVMValueRef, func_name: []const u8) Language {

@@ -27,7 +27,7 @@
 | **语言** | Rust |
 | **获取方式** | `git clone https://github.com/srijs/rust-crc32fast.git` |
 | **输入文件** | `target/release/deps/crc32fast-*.rlib` → 转换为 `.bc` |
-| **分析命令** | `omniscope analyze --input target/llvm_ir/crc32fast.bc --format json --output tests/golden/baseline/crc32fast.json` |
+| **分析命令** | `./zig-out/bin/OmniScope target/llvm_ir/crc32fast.bc --json -o tests/golden/baseline/crc32fast.json` |
 | **当前 issue 数** | ~12 个 |
 | **已知误报类型** | - 循环展开导致的假阳性 buffer overflow<br>- SIMD intrinsic 误判为未初始化内存使用<br>- 编译器优化引入的 dead code 标记 |
 | **预期变化** | 重构后 issue 数量应 ≤ 当前数量（允许减少误报） |
@@ -155,7 +155,7 @@ clang -S -emit-llvm -O1 $TMPDIR/sqlite3-binding.c -o go_sqlite3.ll
 |------|-----|
 | **项目名** | fft-demo (FFI FFT 示例) |
 | **语言** | Rust + C (FFT 实现) |
-| **获取方式** | 项目内置示例 `examples/fft-demo/` |
+| **获取方式** | https://github.com/Timwood0x10/ffi-demo.git |
 | **输入文件** | `examples/fft-demo/src/main.rs` + `examples/fft-demo/fft/fft.c` → 联合编译为 `.bc` |
 | **分析命令** | `omniscope analyze --input tests/fixtures/fft_demo.bc --cross-language rust,c --format json --output tests/golden/baseline/fft_demo.json` |
 | **当前 issue 数** | ~6 个 |
@@ -188,7 +188,7 @@ make llvm-ir
 | python-xxhash | Python/C | ~8 | ~37% | 部分 | ⚠️ 需要 |
 | zstd-rs | Rust/FFI | ~25 | ~44% | ✅ | ⚠️ 需要 |
 | go-sqlite3 | Go/CGO | ~40 | ~52% | ✅ | ⚠️ 需要 |
-| fft-demo | Rust/C | ~6 | ~33% | ❌ | ✅ 内置 |
+| ffi-demo | Rust/C | ~6 | ~33% | ❌ | ✅ 内置 |
 
 ## 基线验证流程
 

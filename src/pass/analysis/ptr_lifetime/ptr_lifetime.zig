@@ -340,6 +340,24 @@ pub const PtrLifetimePass = struct {
         var classification = NoiseReduction.classifyFunction(item.func_name, debug_file_path, wctx.noise_cfg);
         const func_ptr_val: u64 = @intFromPtr(func);
         classification = NoiseReduction.reevaluateWithDangerPath(classification, wctx.ctx_ptr.isRelevantFunction(func_ptr_val));
+
+        // FFI boundary functions must NEVER be skipped by noise filtering.
+        // Cross-language free violations (e.g., C malloc + Rust __rust_dealloc)
+        // often occur in mangled functions (e.g., _RNvC1x3bad3free) that
+        // layer1NoiseFilter classifies as "compiler_generated" because their
+        // names match the "_RNv" Rust v0 mangling prefix. Since these functions
+        // are on FFI boundaries, they must be analyzed regardless of name patterns.
+        const is_ffi_boundary_func = wctx.ffi_names.contains(item.func_name);
+        if (is_ffi_boundary_func) {
+            if (classification.origin != .user) {
+                classification = .{
+                    .origin = .user,
+                    .weight = .medium,
+                    .reason = "ffi-boundary-override",
+                };
+            }
+        }
+
         if (classification.origin == .compiler_generated) {
             result.funcs_skipped += 1;
             return result;
@@ -351,13 +369,15 @@ pub const PtrLifetimePass = struct {
 
         const func_loc = DebugInfoUtils.getFunctionLocation(func);
         const full_classification = wctx.ctx_ptr.classifyFunctionSurface(item.func_name, func_loc);
-        if (full_classification.origin == .compiler_generated) {
-            result.funcs_skipped += 1;
-            return result;
-        }
-        if (full_classification.origin == .stdlib and !wctx.noise_cfg.include_stdlib) {
-            result.funcs_skipped += 1;
-            return result;
+        if (!is_ffi_boundary_func) {
+            if (full_classification.origin == .compiler_generated) {
+                result.funcs_skipped += 1;
+                return result;
+            }
+            if (full_classification.origin == .stdlib and !wctx.noise_cfg.include_stdlib) {
+                result.funcs_skipped += 1;
+                return result;
+            }
         }
         if (full_classification.origin == .third_party) {
             if (!wctx.ctx_ptr.isRelevantFunction(func_ptr_val)) {

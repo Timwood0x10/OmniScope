@@ -176,8 +176,14 @@ pub const CallerSet = struct {
 ///   3. Call deinit() to free all resources.
 ///
 /// All *Symbol pointers remain valid until deinit().
-/// Pointers are into the symbols HashMap — stable because no insertions
-/// occur after build() completes.
+/// *CallSite pointers from getCrossLangSites() remain valid until deinit().
+///
+/// Pointer stability guarantee:
+///   - call_sites is built in Phase 2 and never modified afterward.
+///   - cross_lang_call_indices stores array indices (not pointers) during
+///     Phase 2, so they survive potential ArrayList reallocations.
+///   - cross_lang_calls (pointers) is resolved in Phase 2b AFTER
+///     call_sites is frozen, ensuring all pointers are stable.
 pub const SymbolGraph = struct {
     allocator: std.mem.Allocator,
     /// All symbols, keyed by name. Values are owned by this map.
@@ -189,6 +195,13 @@ pub const SymbolGraph = struct {
     /// Index: symbols grouped by language.
     by_language: std.AutoHashMap(LanguageId, ManagedArrayList(*Symbol)),
     /// Index: cross-language call sites (caller-side view).
+    /// Stores indices into call_sites. After build() completes, call_sites
+    /// is never modified again, so these indices remain valid.
+    cross_lang_call_indices: ManagedArrayList(usize),
+
+    /// Resolved cross-language call site pointers.
+    /// Built in the final step of build() after call_sites is fully stable.
+    /// Safe because no further appends occur to call_sites.
     cross_lang_calls: ManagedArrayList(*CallSite),
 
     /// Build a SymbolGraph from an LLVM module.
@@ -203,10 +216,11 @@ pub const SymbolGraph = struct {
         var graph = SymbolGraph{
             .allocator = allocator,
             .symbols = std.StringHashMap(Symbol).init(allocator),
-            .call_sites = ManagedArrayList(CallSite).initCapacity(allocator, 0) catch return error.OutOfMemory,
-            .export_surfaces = ManagedArrayList(ExportSurface).initCapacity(allocator, 0) catch return error.OutOfMemory,
+            .call_sites = ManagedArrayList(CallSite).init(allocator),
+            .export_surfaces = ManagedArrayList(ExportSurface).init(allocator),
             .by_language = std.AutoHashMap(LanguageId, ManagedArrayList(*Symbol)).init(allocator),
-            .cross_lang_calls = ManagedArrayList(*CallSite).initCapacity(allocator, 0) catch return error.OutOfMemory,
+            .cross_lang_call_indices = ManagedArrayList(usize).init(allocator),
+            .cross_lang_calls = ManagedArrayList(*CallSite).init(allocator),
         };
         errdefer graph.deinit();
 
@@ -215,7 +229,14 @@ pub const SymbolGraph = struct {
         try collectGlobalSymbols(allocator, module, &graph.symbols);
 
         // ── Phase 2: Build call sites from defined functions ──────────
-        try buildCallSites(allocator, module, &graph.symbols, &graph.call_sites, &graph.cross_lang_calls);
+        try buildCallSites(allocator, module, &graph.symbols, &graph.call_sites, &graph.cross_lang_call_indices);
+
+        // ── Phase 2b: Resolve cross-lang indices to stable pointers ──
+        // call_sites is now immutable (no more appends), so &call_sites.items[i]
+        // pointers are stable until deinit().
+        for (graph.cross_lang_call_indices.items) |idx| {
+            try graph.cross_lang_calls.append(&graph.call_sites.items[idx]);
+        }
 
         // ── Phase 3: Build by_language index ──────────────────────────
         try buildLanguageIndex(allocator, &graph.symbols, &graph.by_language);
@@ -247,6 +268,7 @@ pub const SymbolGraph = struct {
         self.call_sites.deinit();
         self.export_surfaces.deinit();
         self.by_language.deinit();
+        self.cross_lang_call_indices.deinit();
         self.cross_lang_calls.deinit();
     }
 
@@ -661,7 +683,7 @@ fn buildCallSites(
     module: c.LLVMModuleRef,
     symbols: *const std.StringHashMap(Symbol),
     call_sites: *ManagedArrayList(CallSite),
-    cross_lang_calls: *ManagedArrayList(*CallSite),
+    cross_lang_indices: *ManagedArrayList(usize),
 ) !void {
     _ = allocator;
 
@@ -690,11 +712,14 @@ fn buildCallSites(
         }
     }
 
-    // Second pass: collect cross-language call site pointers now that
-    // call_sites backing array is stable (no more appends).
+    // Second pass: collect cross-language call site indices.
+    // Storing indices (not pointers) is safe even if call_sites reallocates
+    // during the first pass — indices remain valid. The pointer resolution
+    // happens in build() after this function returns, when call_sites is
+    // guaranteed stable.
     for (call_sites.items, 0..) |*site, idx| {
         if (site.crosses_language or site.crosses_abi) {
-            try cross_lang_calls.append(&call_sites.items[idx]);
+            try cross_lang_indices.append(idx);
         }
     }
 }

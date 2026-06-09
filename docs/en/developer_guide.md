@@ -12,7 +12,7 @@
 
 | Tool | Minimum Version | Recommended Version | Notes |
 |------|----------------|---------------------|-------|
-| Zig | 0.13.x | 0.14.0-dev (latest) | Language runtime |
+| Zig | 0.15.2 | 0.15.2 | Language runtime |
 | Clang/LLVM | 18+ | 22 (current) | IR generation + C API |
 | CMake | 3.20+ | Latest | Build system |
 | Python | 3.10+ | 3.12 | Test scripts |

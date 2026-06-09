@@ -103,6 +103,19 @@ pub fn checkStoreToGlobal(
     }
 }
 
+const AllocNode = @import("../../../types/memory_graph_types.zig").AllocNode;
+
+/// Find a MemoryGraph node by scanning node_store for matching alloc_inst field.
+/// O(N) scan — used only as fallback when findCanonicalAlloc fails.
+/// This handles cases where the ptr_arg IS the call instruction itself
+/// (same LLVMValueRef), but isn't indexed via the alias map.
+fn findNodeByAllocInst(mg: *memory_graph.MemoryGraph, target_inst: u64) ?*AllocNode {
+    for (mg.node_store.items) |node| {
+        if (node.alloc_inst == target_inst) return node;
+    }
+    return null;
+}
+
 /// Check for cross-language free violations.
 ///
 /// Uses the centralized classifyAllocLanguage/classifyFreeLanguage from
@@ -130,24 +143,42 @@ pub fn checkCrossLanguageFree(
     const free_lang = classifyFreeLanguage(callee_name);
     if (free_lang == null) return; // Not a known free function
 
+    // DEBUG: trace entry for C→Rust-cross_free diagnosis
+    std.debug.print("CROSS-LANG-ENTRY: callee={s} free_lang={?s} in {s}\n", .{ callee_name, free_lang, func_name });
+
+    // Get the pointer argument (first argument of the free call).
+    // LLVM C API operand layout for "call void @free(ptr %p)":
+    //   operand 0 = %p (first argument), operand 1 = @free (callee)
+    // Note: LLVMGetCalledValue() returns the callee; operand indices
+    // start with arguments, NOT the callee.
     const ptr_arg = c.LLVMGetOperand(inst, 0);
-    if (@intFromPtr(ptr_arg) == 0) return;
+    if (@intFromPtr(ptr_arg) == 0) {
+        log.debug("CROSS-LANG-FREE: no ptr_arg for {s}", .{callee_name});
+        return;
+    }
 
     const ptr_hash = @as(u64, @intFromPtr(ptr_arg));
 
-    // Path 1: Memory graph has alloc_lang info
+    // Path 1: Memory graph has alloc_lang info.
+    // Use findCanonicalAlloc to resolve alias chains — the free call's
+    // ptr_arg (e.g., %p from a branch) may differ from the malloc call
+    // instruction used as the node key. findCanonicalAlloc checks both
+    // direct lookup and alias_to_canonical reverse index.
     if (mem_graph) |mg| {
-        if (mg.nodes.get(ptr_hash)) |node| {
-            const alloc_lang = node.alloc_lang;
+        const node = mg.findCanonicalAlloc(ptr_hash) orelse blk: {
+            break :blk findNodeByAllocInst(mg, ptr_hash);
+        };
+        if (node) |n| {
+            const alloc_lang = n.alloc_lang;
 
             // =================================================================
             // P3: Family-first cross-free判定 (优先于 language-based 分支)
             // 当 alloc_family 和 release_family 都已知时, 使用 family 匹配
             // 替代 alloc_lang != free_lang 作为核心漏洞条件.
             // =================================================================
-            if (node.alloc_family != null) {
+            if (n.alloc_family != null) {
                 if (mg.family_registry) |reg| {
-                    const alloc_family = node.alloc_family.?;
+                    const alloc_family = n.alloc_family.?;
                     // Look up release family from callee name
                     const release_op = reg.lookupRelease(callee_name, null);
                     if (release_op) |rop| {
@@ -301,57 +332,89 @@ pub fn checkCrossLanguageFree(
         }
     }
 
-    // Path 2: Pointer map has source instruction — classify by name
-    if (pointer_map.get(ptr_arg)) |ptr_info| {
-        if (ptr_info.source_inst) |src_inst| {
-            const src_name_ptr = c.LLVMGetValueName(src_inst);
-            if (@intFromPtr(src_name_ptr) != 0) {
-                const src_name = std.mem.span(src_name_ptr);
-                const src_alloc_lang = classifyAllocLanguage(src_name);
-
-                if (src_alloc_lang) |alloc_l| {
-                    // P1: Call-site language context for cross-language free detection.
-                    // When Zig code calls C's free() via @cImport("libc"), the IR shows
-                    // callee as just "free" — same as C code calling free(). But semantically:
-                    //   - If alloc was from a ZIG allocator (not malloc) → cross-language bug
-                    //   - If alloc was from C (malloc) → legitimate @cImport usage, skip
-                    //
-                    // Key insight: Use ctx.module_language.language to determine caller's language.
-                    const caller_is_zig = ctx.module_language.language == .zig;
-                    const free_is_c = std.mem.eql(u8, free_lang.?, "c");
-                    const alloc_is_zig = std.mem.eql(u8, alloc_l, "zig");
-                    const alloc_is_c = std.mem.eql(u8, alloc_l, "c");
-
-                    if (caller_is_zig and free_is_c) {
-                        // Zig module calling C's free()
-                        if (alloc_is_zig or (!alloc_is_c and !std.mem.eql(u8, alloc_l, "rust"))) {
-                            // Alloc is from Zig allocator (or unknown in Zig context)
-                            // → potential cross-language free bug
-                            try reportCrossLanguageFree(ctx, func_name, callee_name, "Zig (allocator)", "C (free)", inst, diag);
-                            return;
-                        }
-                        // alloc_is_c: malloc+free via @cImport → legitimate, fall through to normal check
-                    }
-
-                    if (!std.mem.eql(u8, alloc_l, free_lang.?)) {
-                        // SAME-LANGUAGE MERGE GUARD (Path 2): When src_alloc_lang comes
-                        // from name-based classification (e.g., "new" → "cpp") and free_lang
-                        // matches the caller module's language, don't report FP.
-                        // Uses isAbiCompatibleAllocFree for C/C++ equivalence.
-                        const caller_module_lang = ctx.module_language.language;
-                        const free_lang_enum = freeLangToLanguage(free_lang.?);
-                        const is_same_language = isAbiCompatibleAllocFree(free_lang_enum, caller_module_lang);
-
-                        if (is_same_language) {
-                            log.debug("SAME-LANG-MERGE [PATH2]: skipping cross_language_free (alloc={s}, free={s}, module={s}) in {s}", .{
-                                alloc_l, free_lang.?, @tagName(caller_module_lang), func_name,
-                            });
-                        } else {
-                            try reportCrossLanguageFree(ctx, func_name, callee_name, alloc_l, free_lang.?, inst, diag);
-                        }
+    // Path 2: Pointer map has source instruction — classify by callee name.
+    // For call instructions (malloc, __rust_alloc, etc.), classify by the
+    // CALLEE name, not the SSA value name (e.g., "p"). LLVMGetValueName on
+    // a call instruction returns the SSA name, not the called function.
+    const pm_direct: ?PtrInfo = pointer_map.get(ptr_arg);
+    var ptr_info_opt: ?PtrInfo = pm_direct;
+    if (ptr_info_opt == null) {
+        // Fallback: scan pointer_map by value name (bridges LLVMValueRef gap).
+        const ptr_name_ptr = c.LLVMGetValueName(ptr_arg);
+        if (@intFromPtr(ptr_name_ptr) != 0) {
+            const ptr_name = std.mem.span(ptr_name_ptr);
+            var pm_iter = pointer_map.iterator();
+            while (pm_iter.next()) |entry| {
+                const key_name_ptr = c.LLVMGetValueName(entry.key_ptr.*);
+                if (@intFromPtr(key_name_ptr) != 0) {
+                    const key_name = std.mem.span(key_name_ptr);
+                    if (std.mem.eql(u8, ptr_name, key_name)) {
+                        ptr_info_opt = entry.value_ptr.*;
+                        break;
                     }
                 }
             }
+        }
+    }
+    // DEBUG: Diagnose why __rust_dealloc path2 doesn't trigger
+    if (pm_direct == null and ptr_info_opt == null) {
+        const pn = c.LLVMGetValueName(ptr_arg);
+        const pn_str = if (@intFromPtr(pn) != 0) std.mem.span(pn) else "(null)";
+        std.debug.print("CROSS-LANG-PATH2-NF: callee={s} ptr={s} — not in pointer_map & name-scan failed in {s}\n", .{ callee_name, pn_str, func_name });
+    }
+    if (ptr_info_opt) |ptr_info| {
+        if (ptr_info.source_inst) |src_inst| {
+            var src_alloc_lang: ?[]const u8 = null;
+            const src_opcode = c.LLVMGetInstructionOpcode(src_inst);
+            if (src_opcode == c.LLVMCall or src_opcode == c.LLVMInvoke) {
+                const src_called = c.LLVMGetCalledValue(src_inst);
+                if (@intFromPtr(src_called) != 0) {
+                    const src_called_name_ptr = c.LLVMGetValueName(src_called);
+                    if (@intFromPtr(src_called_name_ptr) != 0) {
+                        src_alloc_lang = classifyAllocLanguage(std.mem.span(src_called_name_ptr));
+                    }
+                }
+            }
+            if (src_alloc_lang == null) {
+                const src_name_ptr = c.LLVMGetValueName(src_inst);
+                if (@intFromPtr(src_name_ptr) != 0) {
+                    src_alloc_lang = classifyAllocLanguage(std.mem.span(src_name_ptr));
+                }
+            }
+
+            if (src_alloc_lang) |alloc_l| {
+                std.debug.print("CROSS-LANG-PATH2-HIT: callee={s} alloc_l={s} free_lang={?s} in {s}\n", .{ callee_name, alloc_l, free_lang, func_name });
+                const caller_is_zig = ctx.module_language.language == .zig;
+                const free_is_c = std.mem.eql(u8, free_lang.?, "c");
+                const alloc_is_zig = std.mem.eql(u8, alloc_l, "zig");
+                const alloc_is_c = std.mem.eql(u8, alloc_l, "c");
+
+                if (caller_is_zig and free_is_c) {
+                    if (alloc_is_zig or (!alloc_is_c and !std.mem.eql(u8, alloc_l, "rust"))) {
+                        try reportCrossLanguageFree(ctx, func_name, callee_name, "Zig (allocator)", "C (free)", inst, diag);
+                        return;
+                    }
+                }
+
+                if (!std.mem.eql(u8, alloc_l, free_lang.?)) {
+                    const caller_module_lang = ctx.module_language.language;
+                    const free_lang_enum = freeLangToLanguage(free_lang.?);
+                    const is_same_language = isAbiCompatibleAllocFree(free_lang_enum, caller_module_lang);
+
+                    if (is_same_language) {
+                        log.debug("SAME-LANG-MERGE [PATH2]: skipping cross_language_free (alloc={s}, free={s}, module={s}) in {s}", .{
+                            alloc_l, free_lang.?, @tagName(caller_module_lang), func_name,
+                        });
+                    } else {
+                        try reportCrossLanguageFree(ctx, func_name, callee_name, alloc_l, free_lang.?, inst, diag);
+                        return;
+                    }
+                }
+            } else {
+                std.debug.print("CROSS-LANG-PATH2-NULL-ALLOC: callee={s} src_opcode={d} in {s}\n", .{ callee_name, @as(c.LLVMOpcode, src_opcode), func_name });
+            }
+        } else {
+            std.debug.print("CROSS-LANG-PATH2-NOSRC: callee={s} — ptr_info found but source_inst=null in {s}\n", .{ callee_name, func_name });
         }
     }
 }
@@ -634,6 +697,18 @@ pub fn checkDoubleFreeViolation(
     const ptr_arg = c.LLVMGetOperand(inst, 0);
     const ptr_hash = @as(u64, @intFromPtr(ptr_arg));
 
+    // TEMP DEBUG: verify ptr_arg identity
+    {
+        const pn = c.LLVMGetValueName(ptr_arg);
+        std.debug.print("CROSS-LANG: callee={s} ptr_arg_name={s} ptr_hash=0x{x} pointer_map_size={} pm_hit={}\n", .{
+            callee_name,
+            if (@intFromPtr(pn) != 0) std.mem.span(pn) else "(null)",
+            ptr_hash,
+            pointer_map.count(),
+            pointer_map.get(ptr_arg) != null,
+        });
+    }
+
     const record = FreeSiteRecord{
         .bb_id = bb_id,
         .bb_ref = bb_ref,
@@ -848,6 +923,142 @@ pub fn checkCallViolation(
     }
 }
 
+/// Check if an FFI call's return value is null-checked before use.
+/// Reports if an external function returns a pointer but the caller
+/// never checks for null — a common CWE-252/CWE-476 pattern.
+pub fn checkFFIReturnNullGuard(
+    ctx: *PassContext,
+    inst: c.LLVMValueRef,
+    func: c.LLVMValueRef,
+    func_name: []const u8,
+    pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
+    diag: *DiagnosticWriter,
+    stats: *LifetimeStats,
+) !void {
+    _ = func;
+    _ = pointer_map;
+    _ = stats;
+
+    const called = c.LLVMGetCalledValue(inst);
+    if (@intFromPtr(called) == 0) return;
+
+    const called_name_ptr = c.LLVMGetValueName(called);
+    if (@intFromPtr(called_name_ptr) == 0) return;
+    const callee_name = std.mem.span(called_name_ptr);
+
+    // Only check external/declaration functions (FFI boundaries)
+    const callee_func = c.LLVMIsAFunction(called);
+    if (@intFromPtr(callee_func) != 0 and c.LLVMIsDeclaration(callee_func) == 0) return;
+
+    // Only check functions that return a pointer type
+    const ret_type = c.LLVMTypeOf(inst);
+    if (c.LLVMGetTypeKind(ret_type) != c.LLVMPointerTypeKind) return;
+
+    // Skip known non-null-returning allocators (they always succeed or abort)
+    for (&[_][]const u8{ "__rust_alloc", "__rust_alloc_zeroed", "operator new" }) |safe_name| {
+        if (std.mem.eql(u8, callee_name, safe_name)) return;
+    }
+
+    // Scan next few instructions for a null-check (icmp eq/ne with null)
+    var next = c.LLVMGetNextInstruction(inst);
+    var scan_count: u32 = 0;
+    while (@intFromPtr(next) != 0 and scan_count < 5) : (scan_count += 1) {
+        const next_opcode = c.LLVMGetInstructionOpcode(next);
+        if (next_opcode == c.LLVMICmp) {
+            // Check if comparing the call result with null
+            const lhs = c.LLVMGetOperand(next, 0);
+            const rhs = c.LLVMGetOperand(next, 1);
+            if (@intFromPtr(lhs) == @intFromPtr(inst) or @intFromPtr(rhs) == @intFromPtr(inst)) {
+                // Result is being compared — null-check present
+                return;
+            }
+        }
+        // If we hit a use of the value (store, call arg, load through it)
+        // without a null-check, that's the problem
+        if (next_opcode == c.LLVMStore or next_opcode == c.LLVMLoad or
+            next_opcode == c.LLVMCall or next_opcode == c.LLVMInvoke)
+        {
+            // Value used without null-check — report
+            try reportFFINullGuardMissing(ctx, func_name, callee_name, inst, diag);
+            return;
+        }
+        next = c.LLVMGetNextInstruction(next);
+    }
+}
+
+/// Check for type mismatches in FFI call arguments.
+/// Detects suspicious bitcasts (e.g., casting between incompatible pointer types)
+/// passed to external functions — a common CWE-704 pattern.
+pub fn checkFFITypeMismatch(
+    ctx: *PassContext,
+    inst: c.LLVMValueRef,
+    func: c.LLVMValueRef,
+    func_name: []const u8,
+    pointer_map: *std.AutoHashMap(c.LLVMValueRef, PtrInfo),
+    diag: *DiagnosticWriter,
+    stats: *LifetimeStats,
+) !void {
+    _ = func;
+    _ = pointer_map;
+    _ = stats;
+
+    const called = c.LLVMGetCalledValue(inst);
+    if (@intFromPtr(called) == 0) return;
+
+    const called_name_ptr = c.LLVMGetValueName(called);
+    if (@intFromPtr(called_name_ptr) == 0) return;
+    const callee_name = std.mem.span(called_name_ptr);
+
+    // Only check external/declaration functions (FFI boundaries)
+    const callee_func = c.LLVMIsAFunction(called);
+    if (@intFromPtr(callee_func) != 0 and c.LLVMIsDeclaration(callee_func) == 0) return;
+
+    // Check each argument for suspicious bitcasts
+    const num_args = c.LLVMGetNumArgOperands(inst);
+    var i: u32 = 0;
+    while (i < num_args) : (i += 1) {
+        const arg = c.LLVMGetOperand(inst, i);
+        if (@intFromPtr(arg) == 0) continue;
+
+        // Check if the argument is a bitcast instruction
+        const arg_opcode = c.LLVMGetInstructionOpcode(arg);
+        if (arg_opcode != c.LLVMBitCast) continue;
+
+        const src = c.LLVMGetOperand(arg, 0);
+        if (@intFromPtr(src) == 0) continue;
+
+        const src_type = c.LLVMTypeOf(src);
+        const dst_type = c.LLVMTypeOf(arg);
+
+        // Both must be pointer types for a meaningful check
+        if (c.LLVMGetTypeKind(src_type) != c.LLVMPointerTypeKind) continue;
+        if (c.LLVMGetTypeKind(dst_type) != c.LLVMPointerTypeKind) continue;
+
+        // Get the element types to check compatibility
+        const src_elem = c.LLVMGetElementType(src_type);
+        const dst_elem = c.LLVMGetElementType(dst_type);
+        const src_kind = c.LLVMGetTypeKind(src_elem);
+        const dst_kind = c.LLVMGetTypeKind(dst_elem);
+
+        // Flag cross-kind casts (e.g., struct* → int*, function* → data*)
+        if (src_kind != dst_kind and
+            src_kind != c.LLVMIntegerTypeKind and
+            dst_kind != c.LLVMIntegerTypeKind and
+            src_kind != c.LLVMVoidTypeKind and
+            dst_kind != c.LLVMVoidTypeKind)
+        {
+            const mismatch_desc = try std.fmt.allocPrint(
+                ctx.allocator,
+                "argument {d} bitcast from kind={d} to kind={d} passed to {s}",
+                .{ i, src_kind, dst_kind, callee_name },
+            );
+            defer ctx.allocator.free(mismatch_desc);
+            try reportFFITypeMismatch(ctx, func_name, callee_name, mismatch_desc, inst, diag);
+            return; // Report at most one mismatch per call
+        }
+    }
+}
+
 pub fn checkViolations(
     ctx: *PassContext,
     inst: c.LLVMValueRef,
@@ -869,11 +1080,9 @@ pub fn checkViolations(
     if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
         try checkDoubleFreeViolation(ctx, inst, func_name, bb_id, bb_ref, pointer_map, mem_graph, diag, stats, free_sites);
         try checkCallViolation(ctx, inst, func, func_name, bb_id, pointer_map, mem_graph, diag, stats, lifetime_map);
-        // TODO: P16-2b restore checkFFIReturnNullGuard after fixing import errors
-        // try checkFFIReturnNullGuard(ctx, inst, func, func_name, pointer_map, diag, stats);
+        try checkFFIReturnNullGuard(ctx, inst, func, func_name, pointer_map, diag, stats);
         try checkCrossLanguageFree(ctx, inst, func_name, pointer_map, mem_graph, diag, stats);
-        // TODO: P16-2b restore checkFFITypeMismatch after fixing import errors
-        // try checkFFITypeMismatch(ctx, inst, func, func_name, pointer_map, diag, stats);
+        try checkFFITypeMismatch(ctx, inst, func, func_name, pointer_map, diag, stats);
     }
 
     if (opcode == c.LLVMRet) {

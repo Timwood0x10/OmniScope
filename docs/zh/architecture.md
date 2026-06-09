@@ -12,7 +12,7 @@
 
 OmniScope 当前更接近“跨语言 FFI 安全审计工具”，不是通用静态分析器，也不是形式化验证器。代码中的 issue 类型覆盖内存泄漏、跨语言释放、FFI 类型不匹配、空指针解引用、缓冲区风险、回调生命周期等类别，定义见 `src/common/types.zig`。这表示工具具备对应的报告通道和若干检测 pass，不等于所有语言、所有项目形态都有同等成熟度。
 
-版本口径也需要注意：仓库根目录 `VERSION`、`build.zig.zon`、`src/main.zig` 的 `--version` 输出、JSON version 和 SARIF tool version 当前都应保持 `0.2.0`。
+版本号：仓库根目录 `VERSION`、`build.zig.zon`、`src/main.zig` 的 `--version` 输出、JSON version 和 SARIF tool version 当前都保持 `0.2.0`。
 
 ## 总览
 

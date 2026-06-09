@@ -147,6 +147,11 @@ pub const BufferOverflowPass = struct {
                             overflow_count += 1;
                             try reportIssue(ctx, vuln, diag);
                         }
+                        // Check for sprintf/snprintf format string overflow to fixed alloca.
+                        if (checkSprintfOverflow(ctx, func, inst, diag)) |vuln| {
+                            overflow_count += 1;
+                            try reportIssue(ctx, vuln, diag);
+                        }
                     }
                 }
             }
@@ -449,5 +454,181 @@ pub const BufferOverflowPass = struct {
         }
 
         return null;
+    }
+
+    /// Check for sprintf/snprintf format string overflow.
+    ///
+    /// Pattern: sprintf(fixed_alloca_buf, fmt, ...) where:
+    ///   - buf comes from fixed-size alloca (stack buffer)
+    ///   - fmt contains %s (string format specifier)
+    ///   - No strlen/bounds check on the %s argument before the call
+    ///
+    /// This is CWE-120: the formatted output may exceed the destination buffer
+    /// size when the %s argument is an unbounded string.
+    fn checkSprintfOverflow(ctx: *PassContext, func: c.LLVMValueRef, inst: c.LLVMValueRef, diag: *DiagnosticWriter) ?Issue {
+        const called_val = c.LLVMGetCalledValue(inst);
+        if (@intFromPtr(called_val) == 0) return null;
+        const name_ptr = c.LLVMGetValueName(called_val);
+        if (@intFromPtr(name_ptr) == 0) return null;
+        const callee_name = std.mem.span(name_ptr);
+
+        // Only check sprintf/snprintf calls
+        const is_sprintf = std.mem.eql(u8, callee_name, "sprintf") or
+            std.mem.eql(u8, callee_name, "__sprintf_chk");
+        const is_snprintf = std.mem.eql(u8, callee_name, "snprintf") or
+            std.mem.eql(u8, callee_name, "__snprintf_chk");
+        if (!is_sprintf and !is_snprintf) return null;
+
+        // snprintf with explicit size limit is safer — only flag if format has %s
+        // without a corresponding strlen guard
+        const num_args = llvm_safe.getCallInstArgCount(inst);
+        if (num_args < 2) return null; // Need at least dest + fmt
+
+        // Check arg 0 (destination): is it a fixed alloca?
+        const dest_arg = c.LLVMGetOperand(inst, 0);
+        if (@intFromPtr(dest_arg) == 0) return null;
+
+        // Trace back to alloca — only flag fixed-size stack buffers
+        var alloca_size: u64 = 0;
+        if (!findAllocaSize(dest_arg, &alloca_size)) return null;
+        if (alloca_size == 0 or alloca_size > 4096) return null; // Skip huge/unknown allocas
+
+        // Check arg 1 (format string): look for %s pattern
+        const fmt_arg = c.LLVMGetOperand(inst, 1);
+        if (@intFromPtr(fmt_arg) == 0) return null;
+
+        const has_percent_s = checkFormatStringForPercentS(fmt_arg);
+        if (!has_percent_s) return null; // No %s in format — no unbounded string risk
+
+        // Look for strlen/bounds check before this call in the same basic block
+        if (hasStrlenGuard(inst)) return null;
+
+        const caller_name = getSafeFuncName(func);
+
+        if (is_snprintf) {
+            // snprintf is bounded but %s without strlen can still produce truncated output
+            diag.debug("SPRINTF-CHK: snprintf with %%s and fixed alloca ({d} bytes) in {s} — truncated output possible", .{ alloca_size, caller_name });
+            return null; // Don't report snprintf as HIGH — it's bounded
+        }
+
+        // sprintf with %s to fixed alloca — this is a real overflow risk
+        diag.warn("SPRINTF-BOF [HIGH]: sprintf with %%s to fixed alloca ({d} bytes) in {s} — no strlen guard", .{ alloca_size, caller_name });
+
+        const msg = std.fmt.allocPrint(
+            ctx.allocator,
+            "Buffer overflow risk: sprintf with %%s to fixed {d}-byte stack buffer in {s} — no strlen guard on string argument",
+            .{ alloca_size, caller_name },
+        ) catch null;
+
+        const final_msg = msg orelse "sprintf format string overflow to fixed stack buffer";
+        var issue = Issue.init(.buffer_overflow, final_msg, Location.init(caller_name), .high, 0.80);
+        issue.owned = msg != null;
+        return issue;
+    }
+
+    /// Trace a pointer value back to its alloca instruction and return the allocation size.
+    fn findAllocaSize(ptr_val: c.LLVMValueRef, out_size: *u64) bool {
+        out_size.* = 0;
+        const opcode = c.LLVMGetInstructionOpcode(ptr_val);
+
+        if (opcode == c.LLVMAlloca) {
+            // Direct alloca — get size from array allocation
+            const alloc_type = c.LLVMGetAllocatedType(ptr_val);
+            if (@intFromPtr(alloc_type) == 0) return false;
+            const type_kind = c.LLVMGetTypeKind(alloc_type);
+            if (type_kind != c.LLVMArrayTypeKind and type_kind != c.LLVMIntegerTypeKind) return false;
+
+            // Get data layout from parent module
+            const inst_parent = c.LLVMGetInstructionParent(ptr_val);
+            if (@intFromPtr(inst_parent) == 0) return false;
+            const base_func = c.LLVMGetBasicBlockParent(inst_parent);
+            if (@intFromPtr(base_func) == 0) return false;
+            const module = c.LLVMGetGlobalParent(base_func);
+            if (@intFromPtr(module) == 0) return false;
+            const dl = c.LLVMGetModuleDataLayout(module);
+            if (@intFromPtr(dl) == 0) return false;
+
+            out_size.* = c.LLVMABISizeOfType(dl, alloc_type);
+            return out_size.* > 0;
+        }
+
+        // Follow GEP/bitcast back to alloca
+        if (opcode == c.LLVMGetElementPtr or opcode == c.LLVMBitCast) {
+            const base = c.LLVMGetOperand(ptr_val, 0);
+            if (@intFromPtr(base) != 0) {
+                return findAllocaSize(base, out_size);
+            }
+        }
+
+        return false;
+    }
+
+    /// Check if a format string argument contains %s specifier.
+    fn checkFormatStringForPercentS(fmt_val: c.LLVMValueRef) bool {
+        // Check if it's a constant string (GlobalVariable with initializer)
+        const val_kind = c.LLVMGetValueKind(fmt_val);
+        if (val_kind == c.LLVMConstantExprValueKind) {
+            // Constant expression — try to get the operand
+            const num_ops = c.LLVMGetNumOperands(fmt_val);
+            if (num_ops > 0) {
+                const inner = c.LLVMGetOperand(fmt_val, 0);
+                if (@intFromPtr(inner) != 0) {
+                    return checkFormatStringForPercentS(inner);
+                }
+            }
+            return false;
+        }
+
+        // Check for GlobalVariable (string constant)
+        if (val_kind == c.LLVMGlobalVariableValueKind) {
+            const init = c.LLVMGetInitializer(fmt_val);
+            if (@intFromPtr(init) == 0) return false;
+            // Check if it's a constant data array (string literal)
+            const init_kind = c.LLVMGetValueKind(init);
+            if (init_kind != c.LLVMConstantDataArrayValueKind) return false;
+
+            // Try to read the string content
+            const str_ptr = c.LLVMGetAsString(init, @ptrFromInt(@as(usize, 0)));
+            if (@intFromPtr(str_ptr) == 0) return false;
+            const str_content = std.mem.span(str_ptr);
+            return std.mem.indexOf(u8, str_content, "%s") != null;
+        }
+
+        return false;
+    }
+
+    /// Check if there's a strlen/strnlen/bounds-check call in the same basic block
+    /// before the given instruction. This indicates a guard is present.
+    fn hasStrlenGuard(inst: c.LLVMValueRef) bool {
+        const bb = c.LLVMGetInstructionParent(inst);
+        if (@intFromPtr(bb) == 0) return false;
+
+        var prev = c.LLVMGetPreviousInstruction(inst);
+        var scanned: u32 = 0;
+        while (@intFromPtr(prev) != 0 and scanned < 50) : ({
+            prev = c.LLVMGetPreviousInstruction(prev);
+            scanned += 1;
+        }) {
+            const opcode = c.LLVMGetInstructionOpcode(prev);
+            if (!llvm_safe.isCallOrInvoke(opcode)) continue;
+
+            const called = c.LLVMGetCalledValue(prev);
+            if (@intFromPtr(called) == 0) continue;
+            const name_ptr = c.LLVMGetValueName(called);
+            if (@intFromPtr(name_ptr) == 0) continue;
+            const guard_name = std.mem.span(name_ptr);
+
+            // Check for strlen/strnlen/strnlen_s guards
+            if (std.mem.eql(u8, guard_name, "strlen") or
+                std.mem.eql(u8, guard_name, "strnlen") or
+                std.mem.eql(u8, guard_name, "strnlen_s") or
+                std.mem.indexOf(u8, guard_name, "bounds_check") != null or
+                std.mem.indexOf(u8, guard_name, "size_check") != null)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 };

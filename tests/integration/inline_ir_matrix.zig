@@ -950,8 +950,7 @@ const IR_10_FUNC_MODULE =
 // Extreme 8: Empty module — no functions at all
 // ============================================================================
 const IR_EMPTY_MODULE =
-    LLVM_PREAMBLE
-    ;
+    LLVM_PREAMBLE;
 
 // ============================================================================
 // Extreme 9: Only declarations — no function bodies
@@ -2130,11 +2129,11 @@ const test_cases = [_]TestCase{
     // UE7: Variadic FFI
     .{ .name = "C+Rust-variadic_printf", .category = .cross_lang_bug, .ir = IR_VARIADIC_FFI, .expected_kinds = &.{}, .description = "Rust calls C printf with 3 variadic args" },
     // UE8: All 8 languages in one module
-    .{ .name = "8lang-octuple-mix", .category = .cross_lang_bug, .ir = IR_OCTUPLE_MIX, .expected_kinds = &.{IssueKind.cross_language_free, IssueKind.cross_language_free, IssueKind.cross_language_free, IssueKind.cross_language_free, IssueKind.cross_language_free, IssueKind.cross_language_free, IssueKind.cross_language_free, IssueKind.cross_language_free}, .description = "All 8 languages (C+Rust+C+++Go+Zig+Java+Python+C#): 8 cross_free pairs — DETECTED" },
+    .{ .name = "8lang-octuple-mix", .category = .cross_lang_bug, .ir = IR_OCTUPLE_MIX, .expected_kinds = &.{ IssueKind.cross_language_free, IssueKind.cross_language_free, IssueKind.cross_language_free, IssueKind.cross_language_free, IssueKind.cross_language_free, IssueKind.cross_language_free, IssueKind.cross_language_free, IssueKind.cross_language_free }, .description = "All 8 languages (C+Rust+C+++Go+Zig+Java+Python+C#): 8 cross_free pairs — DETECTED" },
     // UE9: Inline assembly
     .{ .name = "C+Rust-inline_asm", .category = .cross_lang_bug, .ir = IR_INLINE_ASM, .expected_kinds = &.{}, .description = "Rust fn with inline asm block, C malloc+free wrapper" },
     // UE10: Zero-size allocation triangle
-    .{ .name = "zero-size-alloc-triangle", .category = .cross_lang_bug, .ir = IR_ZERO_SIZE_ALLOC, .expected_kinds = &.{IssueKind.cross_language_free, IssueKind.cross_language_free, IssueKind.cross_language_free}, .description = "malloc(0)+rust_alloc(0)+zig_alloc(0): 3 cross_free pairs — DETECTED" },
+    .{ .name = "zero-size-alloc-triangle", .category = .cross_lang_bug, .ir = IR_ZERO_SIZE_ALLOC, .expected_kinds = &.{ IssueKind.cross_language_free, IssueKind.cross_language_free, IssueKind.cross_language_free }, .description = "malloc(0)+rust_alloc(0)+zig_alloc(0): 3 cross_free pairs — DETECTED" },
     // UE11: Loop 1000 iterations with cross_free
     .{ .name = "loop-1000-cross_free", .category = .cross_lang_bug, .ir = IR_LOOP_1000_ALLOC, .expected_kinds = &.{IssueKind.cross_language_free}, .description = "Loop with malloc→rust_dealloc each iteration — DETECTED" },
     // UE12: Triple nested loop + cross_free
@@ -2213,7 +2212,7 @@ fn analyzeIR(tmp_path: []const u8, ir: []const u8) !struct { loader: IRLoader, p
             const name = if (@intFromPtr(name_ptr) != 0) std.mem.span(name_ptr) else "unnamed";
             const is_decl = c.LLVMIsDeclaration(f);
             const has_body = c.LLVMCountBasicBlocks(f);
-            std.debug.print("      DEBUG module func: {s} decl={} bbs={d}\n", .{name, is_decl != 0, has_body});
+            std.debug.print("      DEBUG module func: {s} decl={} bbs={d}\n", .{ name, is_decl != 0, has_body });
             // Print instructions in each basic block
             if (has_body > 0) {
                 var bb = c.LLVMGetFirstBasicBlock(f);
@@ -2225,7 +2224,7 @@ fn analyzeIR(tmp_path: []const u8, ir: []const u8) !struct { loader: IRLoader, p
                         if (opcode == c.LLVMCall or opcode == c.LLVMInvoke) {
                             const called = c.LLVMGetCalledValue(inst);
                             const called_name = if (@intFromPtr(called) != 0) std.mem.span(c.LLVMGetValueName(called)) else "null";
-                            std.debug.print("          DEBUG call: called={s} called_ptr=0x{x}\n", .{called_name, @intFromPtr(called)});
+                            std.debug.print("          DEBUG call: called={s} called_ptr=0x{x}\n", .{ called_name, @intFromPtr(called) });
                         }
                     }
                 }
@@ -2288,7 +2287,7 @@ test "Inline IR Test Matrix — all languages and scenarios" {
         }
 
         // DEBUG: Print issues for Zig-null_deref and Zig-leak
-        if (std.mem.eql(u8, tc.name, "Zig-null_deref") or std.mem.eql(u8, tc.name, "Zig-leak") or std.mem.eql(u8, tc.name, "Go-null_deref") or std.mem.eql(u8, tc.name, "Go-leak")) {
+        if (std.mem.eql(u8, tc.name, "Zig-null_deref") or std.mem.eql(u8, tc.name, "Zig-leak") or std.mem.eql(u8, tc.name, "Go-null_deref") or std.mem.eql(u8, tc.name, "Go-leak") or std.mem.eql(u8, tc.name, "C→Rust-cross_free")) {
             const issues = result.pipeline.getIssues();
             std.debug.print("    DEBUG [{s}]: found {d} issues:\n", .{ tc.name, found_issues });
             for (issues) |issue| {

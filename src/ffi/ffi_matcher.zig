@@ -266,7 +266,7 @@ test "FFIMatch - isValid" {
     match.declare_func = FunctionInfo{
         .name = "test_func",
         .kind = .declare,
-        .func = undefined,
+        .func = .{ .raw = @ptrFromInt(0) },
         .is_external = true,
     };
 
@@ -275,7 +275,7 @@ test "FFIMatch - isValid" {
     match.define_func = FunctionInfo{
         .name = "test_func",
         .kind = .define,
-        .func = undefined,
+        .func = .{ .raw = @ptrFromInt(0) },
         .is_external = false,
     };
 

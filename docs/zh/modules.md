@@ -33,7 +33,7 @@ flowchart TD
 
 ## 发布状态背景
 
-仓库版本口径是 `0.2.0`，但当前工作区更适合作为 release candidate。`zig build` 可以通过，`zig build test` 当前未通过，`tests/BASELINE.md` 仍是 pre-fix 口径。模块文档不应暗示它已经可以直接发布最终版本。
+仓库版本是 `0.2.0`。
 
 ## 入口与配置
 

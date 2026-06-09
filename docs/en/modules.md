@@ -33,7 +33,7 @@ The flow is intentionally centered on `PassContext`. A pass should usually read 
 
 ## Release Status Context
 
-The repository version label is `0.2.0`, but the current worktree should be treated as a release candidate. `zig build` passes, while `zig build test` currently fails, and `tests/BASELINE.md` still describes a pre-fix baseline. Do not use this module document to imply final release readiness.
+The repository version label is `0.2.0`.
 
 ## Entry And Configuration
 

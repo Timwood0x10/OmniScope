@@ -108,6 +108,7 @@ pub const TypeMismatchStats = struct {
     ffi_boundaries_found: u32 = 0,
     size_mismatches: u32 = 0,
     alignment_mismatches: u32 = 0,
+    size_truncation_buffer_overflows: u32 = 0,
     go_pointer_escapes: u32 = 0,
     python_refcount_issues: u32 = 0,
 
@@ -119,6 +120,7 @@ pub const TypeMismatchStats = struct {
         try writer.print("║  FFI boundaries:          {d:>8}     ║\n", .{self.ffi_boundaries_found});
         try writer.print("║  Size mismatches:         {d:>8}     ║\n", .{self.size_mismatches});
         try writer.print("║  Alignment mismatches:    {d:>8}     ║\n", .{self.alignment_mismatches});
+        try writer.print("║  Size truncation → BOF:   {d:>8}     ║\n", .{self.size_truncation_buffer_overflows});
         try writer.print("║  Go pointer escapes:      {d:>8}     ║\n", .{self.go_pointer_escapes});
         try writer.print("║  Python refcount issues:  {d:>8}     ║\n", .{self.python_refcount_issues});
         try writer.writeAll("╚══════════════════════════════════════╝\n");
@@ -226,6 +228,15 @@ pub const FFITypeMismatchPass = struct {
                 switch (mismatch.kind) {
                     .size_mismatch => stats.size_mismatches += 1,
                     .alignment_mismatch => stats.alignment_mismatches += 1,
+                    .size_truncation => {
+                        stats.size_truncation_buffer_overflows += 1;
+                        // Size truncation at FFI boundary can cause buffer overflow:
+                        // e.g., Rust usize (64-bit) → C int (32-bit) passed as
+                        // memcpy/memmove size argument → truncation silently wraps,
+                        // copying fewer bytes than intended → buffer overflow on
+                        // subsequent access. Report as buffer_overflow (CWE-120).
+                        reportSizeTruncationBufferOverflow(ctx, caller_name, callee_name, mismatch, diag) catch {};
+                    },
                     .go_pointer_escape => stats.go_pointer_escapes += 1,
                     .python_refcount_mismatch => stats.python_refcount_issues += 1,
                     else => {},
@@ -802,6 +813,50 @@ pub const FFITypeMismatchPass = struct {
         try ctx.addIssue(&issue);
 
         diag.warn("[FFI-TYPE-MISMATCH] {s} → {s}: {s}", .{ caller_name, callee_name, mismatch.description });
+    }
+
+    /// Report a buffer overflow issue caused by size truncation at FFI boundary.
+    ///
+    /// When a size parameter is truncated at an FFI boundary (e.g., Rust usize → C int),
+    /// the truncated value may wrap, causing a buffer overflow in the callee when it
+    /// uses the truncated size for memcpy/memmove/etc. This is reported as CWE-120.
+    fn reportSizeTruncationBufferOverflow(
+        ctx: *PassContext,
+        caller_name: []const u8,
+        callee_name: []const u8,
+        mismatch: TypeMismatchInfo,
+        diag: *DiagnosticWriter,
+    ) !void {
+        const location = Location.init(caller_name);
+
+        const trace = try ctx.allocator.alloc(TraceEntry, 3);
+        trace[0] = try makeTrace(ctx.allocator, "FFI size truncation: {s} → {s}", .{ caller_name, callee_name });
+        trace[1] = try makeTrace(ctx.allocator, "Caller type: {s} ({s})", .{ mismatch.caller_type, mismatch.caller_lang });
+        trace[2] = try makeTrace(ctx.allocator, "Callee expects: {s} ({s})", .{ mismatch.callee_type, mismatch.callee_lang });
+
+        const message = try std.fmt.allocPrint(
+            ctx.allocator,
+            "Buffer overflow risk: size truncation at FFI boundary in param {} ({s} → {s}) — truncated size may cause buffer overflow in {s}",
+            .{ mismatch.param_index, mismatch.caller_type, mismatch.callee_type, callee_name },
+        );
+
+        const issue = Issue.initWithTrace(
+            .buffer_overflow,
+            message,
+            location,
+            .high,
+            0.80,
+            trace,
+        );
+
+        try ctx.addIssue(&issue);
+
+        diag.warn("[FFI-SIZE-TRUNC-BOF] {s} → {s}: size truncation ({s} → {s}) may cause buffer overflow", .{
+            caller_name,
+            callee_name,
+            mismatch.caller_type,
+            mismatch.callee_type,
+        });
     }
 
     /// Checks if a call is an FFI boundary.

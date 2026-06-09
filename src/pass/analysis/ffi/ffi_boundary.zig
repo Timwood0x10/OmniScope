@@ -219,8 +219,22 @@ pub const FFIBoundaryPass = struct {
         );
 
         if (classification.weight == .ignored) {
-            diag.debug("SKIP [NOISE]: {s} ({s})", .{ func_name, classification.origin.toString() });
-            return result;
+            // Rescue: compiler_generated functions that call known FFI alloc/free functions
+            // (e.g., Rust v0 mangled user code like `_RNvC1x3bad3free` classified as noise
+            // by the `_RNv` prefix pattern) must not be skipped — they carry real FFI bugs.
+            const rescued = blk: {
+                if (classification.origin != .compiler_generated) break :blk false;
+                for (fir.calls) |call_inst| {
+                    if (fir.getCalleeNameByInst(call_inst)) |cn| {
+                        if (SemanticRegistry.lookup(cn) != null) break :blk true;
+                    }
+                }
+                break :blk false;
+            };
+            if (!rescued) {
+                diag.debug("SKIP [NOISE]: {s} ({s})", .{ func_name, classification.origin.toString() });
+                return result;
+            }
         }
 
         // Phase 2 (REMOVED in R7.0): FP whitelist was here.
@@ -757,13 +771,78 @@ pub const FFIBoundaryPass = struct {
     /// Higher confidence means we're more certain the function truly belongs
     /// to that language (not a misclassification due to name collision).
     fn classifyLanguageConfidence(func_name: []const u8, lang: Language, module_lang: Language) f32 {
-        _ = func_name;
-        // TODO: Implement full LangClassification with DWARF/mangling/prefix signals
-        // For now, use a conservative default:
-        // - If per-function lang matches module lang, confidence = 0.75
-        // - Otherwise, confidence = 0.50 (uncertain)
+        // Layer 1: Strong name-based signals (mangling/prefix) → high confidence
+        const name_signal = detectLanguageSignal(func_name);
+        if (name_signal != null) {
+            if (name_signal.? == lang) return 0.95; // Strong signal matches claimed lang
+            return 0.15; // Strong signal contradicts claimed lang → very uncertain
+        }
+
+        // Layer 2: Module-lang agreement → moderate confidence
         if (lang == module_lang) return 0.75;
+
+        // Layer 3: Unknown — low confidence
         return 0.50;
+    }
+
+    /// Detect a strong language signal from function name mangling/prefixes.
+    /// Returns the detected language, or null if no strong signal is present.
+    fn detectLanguageSignal(func_name: []const u8) ?Language {
+        // Rust v0 mangling: _RNv..., _RN..., _RINv...
+        if (std.mem.startsWith(u8, func_name, "_RN") or
+            std.mem.startsWith(u8, func_name, "_RINv"))
+        {
+            return .rust;
+        }
+        // Rust legacy Itanium mangling: _ZN4core, _ZN5alloc, _ZN3std
+        if (std.mem.startsWith(u8, func_name, "_ZN4core") or
+            std.mem.startsWith(u8, func_name, "_ZN5alloc") or
+            std.mem.startsWith(u8, func_name, "_ZN3std"))
+        {
+            return .rust;
+        }
+        // C++ Itanium mangling: _Z, _ZN, _ZSt (std::)
+        if (std.mem.startsWith(u8, func_name, "_Z") and !std.mem.startsWith(u8, func_name, "_ZN4core") and
+            !std.mem.startsWith(u8, func_name, "_ZN5alloc") and !std.mem.startsWith(u8, func_name, "_ZN3std"))
+        {
+            return .cpp;
+        }
+        // Go runtime: runtime.*, main.*, go.func*
+        if (std.mem.startsWith(u8, func_name, "runtime.") or
+            std.mem.startsWith(u8, func_name, "main.") or
+            std.mem.startsWith(u8, func_name, "go.func"))
+        {
+            return .go;
+        }
+        // Java JNI: Java_*, JNI_*
+        if (std.mem.startsWith(u8, func_name, "Java_") or
+            std.mem.startsWith(u8, func_name, "JNI_"))
+        {
+            return .java;
+        }
+        // Python C API: Py_*, PyObject_*, _Py*
+        if (std.mem.startsWith(u8, func_name, "Py_") or
+            std.mem.startsWith(u8, func_name, "PyObject_") or
+            std.mem.startsWith(u8, func_name, "_Py"))
+        {
+            return .python;
+        }
+        // Zig stdlib: std.*, debug.*, builtin.*
+        if (std.mem.startsWith(u8, func_name, "std.") or
+            std.mem.startsWith(u8, func_name, "debug.") or
+            std.mem.startsWith(u8, func_name, "builtin."))
+        {
+            return .zig;
+        }
+        // C# / .NET: Marshal.*, CoTaskMem*, GCHandle_*
+        if (std.mem.startsWith(u8, func_name, "Marshal.") or
+            std.mem.startsWith(u8, func_name, "CoTaskMem") or
+            std.mem.startsWith(u8, func_name, "GCHandle_"))
+        {
+            return .csharp;
+        }
+        // No strong signal
+        return null;
     }
 
     /// Report a known-risky function call.

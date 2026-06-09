@@ -325,11 +325,35 @@ test "LeakConfidence - severity classification" {
     try testing.expect(low.isLow());
 }
 
+/// Helper: create a mock AllocNode for testing (properly initialized, no undefined).
+fn mockAllocNode(allocator: std.mem.Allocator) !memory_types.AllocNode {
+    return .{
+        .id = 0,
+        .alloc_inst = 0,
+        .merkle_root = 0,
+        .aliases = std.AutoHashMap(u64, void).init(allocator),
+        .freed = false,
+        .freed_by = null,
+        .source_kind = .heap_alloc,
+        .free_sites = try std.ArrayList(memory_types.FreeRecord).initCapacity(allocator, 4),
+        .escapes = null,
+        .raii_cleanup_sites = try std.ArrayList(u64).initCapacity(allocator, 4),
+        .defer_sites = try std.ArrayList(u64).initCapacity(allocator, 4),
+    };
+}
+
+fn deinitMockAllocNode(node: *memory_types.AllocNode, allocator: std.mem.Allocator) void {
+    node.aliases.deinit();
+    node.free_sites.deinit(allocator);
+    node.raii_cleanup_sites.deinit(allocator);
+    node.defer_sites.deinit(allocator);
+}
+
 test "calculateLeakConfidence - ArenaAllocator = low confidence" {
     var tracker = Tracker.init(testing.allocator);
 
-    // Mock AllocNode with minimal fields
-    var node: memory_types.AllocNode = undefined;
+    var node = try mockAllocNode(testing.allocator);
+    defer deinitMockAllocNode(&node, testing.allocator);
     node.ownership_model = .manual;
     node.has_raii_cleanup = false;
     node.container_type = null;
@@ -348,7 +372,8 @@ test "calculateLeakConfidence - ArenaAllocator = low confidence" {
 test "calculateLeakConfidence - page_allocator + FFI = high confidence" {
     var tracker = Tracker.init(testing.allocator);
 
-    var node: memory_types.AllocNode = undefined;
+    var node = try mockAllocNode(testing.allocator);
+    defer deinitMockAllocNode(&node, testing.allocator);
     node.ownership_model = .manual;
     node.has_raii_cleanup = false;
     node.container_type = null;
@@ -367,7 +392,8 @@ test "calculateLeakConfidence - page_allocator + FFI = high confidence" {
 test "calculateLeakConfidence - ArrayList container = low confidence" {
     var tracker = Tracker.init(testing.allocator);
 
-    var node: memory_types.AllocNode = undefined;
+    var node = try mockAllocNode(testing.allocator);
+    defer deinitMockAllocNode(&node, testing.allocator);
     node.ownership_model = .raii;
     node.has_raii_cleanup = false;
     node.container_type = .zig_arraylist;
@@ -386,7 +412,8 @@ test "calculateLeakConfidence - ArrayList container = low confidence" {
 test "calculateLeakConfidence - GPA + RAII cleanup = medium confidence" {
     var tracker = Tracker.init(testing.allocator);
 
-    var node: memory_types.AllocNode = undefined;
+    var node = try mockAllocNode(testing.allocator);
+    defer deinitMockAllocNode(&node, testing.allocator);
     node.ownership_model = .raii;
     node.has_raii_cleanup = true;
     node.container_type = null;
@@ -404,7 +431,8 @@ test "calculateLeakConfidence - GPA + RAII cleanup = medium confidence" {
 test "shouldReport - respects threshold" {
     var tracker = Tracker.init(testing.allocator);
 
-    var node: memory_types.AllocNode = undefined;
+    var node = try mockAllocNode(testing.allocator);
+    defer deinitMockAllocNode(&node, testing.allocator);
     node.ownership_model = .manual;
     node.has_raii_cleanup = false;
     node.container_type = null;
@@ -421,7 +449,8 @@ test "shouldReport - respects threshold" {
 test "calculateLeakConfidence - boundary cases" {
     var tracker = Tracker.init(testing.allocator);
 
-    var node: memory_types.AllocNode = undefined;
+    var node = try mockAllocNode(testing.allocator);
+    defer deinitMockAllocNode(&node, testing.allocator);
     node.ownership_model = .manual;
     node.has_raii_cleanup = false;
     node.container_type = null;

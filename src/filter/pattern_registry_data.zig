@@ -431,14 +431,14 @@ pub const PatternData = struct {
         "slice::",                     "fmt::",
         "string::",                    "_ZN4core",
         "_ZN5alloc",                   "_ZN3std",
-        "_RNv",                        "$LT$core",
-        "$LT$alloc",                   "_$LT$",
-        "_GT$",                        "real_drop_in_place",
-        "size_hint",                   "reserve_total",
-        "Error3new",                   "Error8downcast",
-        "error5error",                 "error6vtable",
-        "object_reallocate_boxed",     "object_drop",
-        "$u7b$u7b$closure$u7d$u7d$",   "anyhow5error",
+        "$LT$core",                    "$LT$alloc",
+        "_$LT$",                       "_GT$",
+        "real_drop_in_place",          "size_hint",
+        "reserve_total",               "Error3new",
+        "Error8downcast",              "error5error",
+        "error6vtable",                "object_reallocate_boxed",
+        "object_drop",                 "$u7b$u7b$closure$u7d$u7d$",
+        "anyhow5error",
     };
 
     pub const zig_noise_patterns = [_][]const u8{

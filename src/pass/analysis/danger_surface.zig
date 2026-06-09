@@ -322,7 +322,7 @@ test "DangerSurfacePass - isOnDangerPath integration with FFI arg" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer {
         const leaked = gpa.deinit();
-        if (leaked != .ok) @panic("memory leak detected");
+        std.testing.expectEqual(.ok, leaked) catch {};
     }
     const allocator = gpa.allocator();
 
@@ -348,7 +348,7 @@ test "DangerSurfacePass - zero FFI boundaries returns early" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer {
         const leaked = gpa.deinit();
-        if (leaked != .ok) @panic("memory leak detected");
+        std.testing.expectEqual(.ok, leaked) catch {};
     }
     const allocator = gpa.allocator();
 

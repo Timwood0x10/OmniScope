@@ -110,22 +110,28 @@ pub fn classifyFunction(
     };
 }
 
-/// E2-2e: Re-evaluate stdlib classification with MemoryGraph danger-path context.
+/// E2-2e: Re-evaluate stdlib/compiler-generated classification with MemoryGraph danger-path context.
 ///
-/// Stdlib functions whose pointers flow into FFI boundaries should NOT be
+/// Functions whose pointers flow into FFI boundaries should NOT be
 /// suppressed — they are part of a cross-language data path and may carry
-/// real risks. This function upgrades stdlib→user when the function is
-/// confirmed to be on an FFI danger path.
+/// real risks. This function upgrades stdlib/compiler_generated→user when
+/// the function is confirmed to be on an FFI danger path.
+///
+/// CRITICAL: compiler_generated functions (e.g., Rust v0 mangled names
+/// matching "_RNv" pattern) may contain cross-language free bugs.
+/// Example: `_RNvC1x3bad3free` calls malloc + __rust_dealloc — a real
+/// C→Rust cross-free violation that was missed because the "_RNv" prefix
+/// triggered layer1NoiseFilter.
 pub fn reevaluateWithDangerPath(
     classification: ClassificationResult,
     is_on_danger_path: bool,
 ) ClassificationResult {
     if (!is_on_danger_path) return classification;
-    if (classification.origin == .stdlib) {
+    if (classification.origin == .stdlib or classification.origin == .compiler_generated) {
         return .{
             .origin = .user,
             .weight = .medium,
-            .reason = "stdlib-on-danger-path",
+            .reason = "on-danger-path",
         };
     }
     return classification;

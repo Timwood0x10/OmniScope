@@ -41,6 +41,7 @@ const isRustMangledName = rust_ffi_helpers.isRustMangledName;
 const mayRetainPointer = rust_ffi_helpers.mayRetainPointer;
 const ptrOriginatesFromRustAlloc = rust_ffi_helpers.ptrOriginatesFromRustAlloc;
 const isPureConsumptionFunction = rust_ffi_helpers.isPureConsumptionFunction;
+const isMemoryManagementFunction = rust_ffi_helpers.isMemoryManagementFunction;
 
 const SemanticKind = @import("../../../semantics/semantic_tree.zig").SemanticKind;
 const ptr_lifetime_utils = @import("../ptr_lifetime/ptr_lifetime_utils.zig");
@@ -193,6 +194,12 @@ pub fn detectCrossLangMismatch(auditor: *Auditor, func: c.LLVMValueRef, ctx: *Pa
 }
 
 /// Detect unsafe FFI calls without validation (Rule 4).
+///
+/// Only flags extern "C" calls that are NOT known safe functions.
+/// Pure consumption functions (memcpy, strlen, printf, etc.) and
+/// memory management functions (malloc, free, realloc) are excluded
+/// because they are well-understood libc APIs with no inherent
+/// unsafety beyond what the allocator mismatch pass already covers.
 pub fn detectUnsafeFfiCalls(auditor: *Auditor, func: c.LLVMValueRef, insts: []const c.LLVMValueRef, inst_cache: *InstCache) !void {
     var has_unsafe_ffi = false;
     for (insts) |inst| {
@@ -207,6 +214,18 @@ pub fn detectUnsafeFfiCalls(auditor: *Auditor, func: c.LLVMValueRef, insts: []co
         const callee_name = inst_cache.getCalleeName(inst) orelse continue;
 
         if (isExternCCall(callee_name)) {
+            // Exclude pure consumption functions (memcpy, strlen, printf, etc.)
+            // — these are well-understood libc APIs, not inherently unsafe.
+            if (isPureConsumptionFunction(callee_name)) continue;
+
+            // Exclude memory management functions (malloc, free, realloc, etc.)
+            // — allocator mismatch is handled by dedicated passes.
+            if (isMemoryManagementFunction(callee_name)) continue;
+
+            // Exclude LLVM intrinsics (already filtered by isExternCCall prefix,
+            // but double-check for safety)
+            if (std.mem.startsWith(u8, callee_name, "llvm.")) continue;
+
             has_unsafe_ffi = true;
         }
         if (has_unsafe_ffi) break;

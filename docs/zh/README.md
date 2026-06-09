@@ -2,7 +2,7 @@
 
 OmniScope 是一个基于 LLVM IR 的安全审计工具，主要关注跨语言 FFI 边界上的内存和资源所有权问题。它更适合回答“这个指针或资源跨过语言边界后，分配、释放、借用和回调生命周期是否还能说清楚”，而不是替代编译器、lint、通用静态分析器或形式化验证工具。
 
-当前仓库版本口径是 `0.2.0`，对应根目录 `VERSION`、`build.zig.zon`、CLI `--version`、JSON 输出和 SARIF 输出。但当前工作区仍应按 release candidate 看待，等测试和 baseline 收敛后再打最终 tag。
+当前仓库版本是 `0.2.0`，对应根目录 `VERSION`、`build.zig.zon`、CLI `--version`、JSON 输出和 SARIF 输出。
 
 ## 先判断你是否需要它
 

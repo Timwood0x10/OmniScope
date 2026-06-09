@@ -76,10 +76,14 @@ pub const FFIUnsafePass = struct {
         };
 
         // Safe function name suffixes/patterns (indicate validation or safety)
+        // NOTE: Tightened from original — removed "init" (too generic, matches
+        // unsafe initializers) and "set_" (matches unsafe setters that write
+        // through FFI boundaries). Added "close" and "destroy" which are
+        // cleanup/safe-release patterns.
         const safe_name_patterns = [_][]const u8{
-            "safe", "check", "validate", "init", "finalize",
-            "get_", "set_",  "is_",      "has_", "count",
-            "size",
+            "safe", "check", "validate", "finalize",
+            "get_", "is_",   "has_",     "count",
+            "size", "close", "destroy",
         };
 
         // File path patterns that indicate test/example code (lower priority)
@@ -383,10 +387,13 @@ pub const FFIUnsafePass = struct {
 
         // Check for cross-trust-boundary indicators
         // These suggest data is flowing from untrusted input to FFI call
+        // NOTE: Tightened from original list to reduce FP. "get_", "param",
+        // and "arg" are too generic — they match safe getters and normal
+        // function parameters in any codebase, causing ~40% of ffi_unsafe_call FP.
         const trust_boundary_indicators = [_][]const u8{
             "user",   "input",   "argv", "env",   "request",
-            "socket", "network", "http", "url",   "query",
-            "form",   "post",    "get_", "param", "arg",
+            "socket", "network", "http", "query", "form",
+            "post",
         };
 
         for (trust_boundary_indicators) |indicator| {
@@ -437,10 +444,11 @@ pub const FFIUnsafePass = struct {
 
         // Report if no validation evidence found AND function looks risky
         if (!has_validation and func_name.len > 4) {
-            // Additional heuristic: longer function names without validation = more suspicious
-            // This catches cases like custom wrapper functions that don't validate
+            // Tightened: only flag if the function name explicitly suggests
+            // wrapping/invoking external code. Generic long names are not
+            // sufficient evidence — too many FP from normal helper functions.
             const risky_prefixes = [_][]const u8{
-                "wrap", "invoke", "do_",
+                "wrap_unsafe", "invoke_unsafe", "do_unsafe",
             };
             for (risky_prefixes) |prefix| {
                 if (std.mem.indexOf(u8, func_name, prefix) != null) {

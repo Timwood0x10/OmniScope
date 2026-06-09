@@ -497,7 +497,7 @@ test "SemanticRegistry - totalCount" {
 
 test "R9.1 inferCrossLangRisk - Go to C.malloc" {
     const result = SemanticRegistry.inferCrossLangRisk("go", "malloc") orelse
-        @panic("expected inference result");
+        return error.TestUnexpectedResult;
     try std.testing.expectEqual(RiskKind.go_cgo_alloc, result.kind);
     try std.testing.expectEqual(Severity.high, result.severity);
     try std.testing.expect(result.confidence >= 0.90);
@@ -506,7 +506,7 @@ test "R9.1 inferCrossLangRisk - Go to C.malloc" {
 
 test "R9.1 inferCrossLangRisk - Go to C.free is critical" {
     const result = SemanticRegistry.inferCrossLangRisk("go", "free") orelse
-        @panic("expected inference result");
+        return error.TestUnexpectedResult;
     try std.testing.expectEqual(RiskKind.go_cgo_alloc, result.kind);
     try std.testing.expectEqual(Severity.critical, result.severity);
     try std.testing.expect(result.confidence >= 0.95);
@@ -515,7 +515,7 @@ test "R9.1 inferCrossLangRisk - Go to C.free is critical" {
 
 test "R9.1 inferCrossLangRisk - Rust to C.strcpy" {
     const result = SemanticRegistry.inferCrossLangRisk("rust", "strcpy") orelse
-        @panic("expected inference result");
+        return error.TestUnexpectedResult;
     try std.testing.expectEqual(RiskKind.unchecked_copy, result.kind);
     try std.testing.expect(result.confidence >= 0.85);
 }
