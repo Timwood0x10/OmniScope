@@ -22,7 +22,6 @@
 //!   - <0.5: Low/Likely FP (hidden by default)
 
 const std = @import("std");
-const log = std.log.scoped(.zig_allocator_tracker);
 const memory_types = @import("../types/memory_graph_types.zig");
 
 /// Zig allocator classification.
@@ -47,7 +46,15 @@ pub const AllocatorKind = enum {
 /// Range: [0.0, 1.0] where 1.0 = definitely a leak, 0.0 = definitely not.
 pub const LeakConfidence = struct {
     score: f32,
-    reason: []const u8,
+    /// Fixed-size reason buffer to avoid dangling pointer after function return.
+    /// The reason string is stored inline so the struct is self-contained.
+    reason_buf: [256]u8,
+    reason_len: usize,
+
+    /// Get the reason string slice.
+    pub fn reason(self: *const LeakConfidence) []const u8 {
+        return self.reason_buf[0..self.reason_len];
+    }
 
     /// Check if this is a critical-severity leak (>= 0.9).
     pub fn isCritical(self: LeakConfidence) bool {
@@ -67,6 +74,29 @@ pub const LeakConfidence = struct {
     /// Check if this is a low-severity leak (< 0.5).
     pub fn isLow(self: LeakConfidence) bool {
         return self.score < 0.5;
+    }
+
+    /// Create a LeakConfidence with a literal reason string.
+    pub fn init(score: f32, comptime msg: []const u8) LeakConfidence {
+        var result = LeakConfidence{
+            .score = score,
+            .reason_buf = undefined,
+            .reason_len = msg.len,
+        };
+        @memcpy(result.reason_buf[0..msg.len], msg);
+        return result;
+    }
+
+    /// Create a LeakConfidence with a runtime reason string.
+    pub fn initRuntime(score: f32, msg: []const u8) LeakConfidence {
+        var buf: [256]u8 = undefined;
+        const len = @min(msg.len, buf.len);
+        @memcpy(buf[0..len], msg[0..len]);
+        return .{
+            .score = score,
+            .reason_buf = buf,
+            .reason_len = len,
+        };
     }
 };
 
@@ -142,7 +172,7 @@ pub const Tracker = struct {
     ///
     /// This is the core "silver bullet" logic that integrates:
     ///   1. Allocator kind (Arena = low confidence leak)
-    ///   2. Container type (ArrayList = managed by container)
+    ///   2. Container type (ArrayList/HashMap/Buffer/MultiArrayList = managed by container)
     ///   3. Ownership model (RAII = has cleanup)
     ///   4. FFI boundary (cross-language = higher risk)
     ///
@@ -177,33 +207,50 @@ pub const Tracker = struct {
 
         var score: f32 = 0.8; // Base score: likely a leak
         var reason_buf: [256]u8 = undefined;
-        var reason: []const u8 = "";
+        var reason_len: usize = 0;
+
+        // Helper to set reason from a compile-time string literal
+        const setReason = struct {
+            fn call(buf: *[256]u8, len: *usize, msg: []const u8) void {
+                const copy_len = @min(msg.len, buf.len);
+                @memcpy(buf[0..copy_len], msg[0..copy_len]);
+                len.* = copy_len;
+            }
+        }.call;
+
+        // Helper to format reason into buffer
+        const fmtReason = struct {
+            fn call(buf: *[256]u8, len: *usize, comptime fmt_str: []const u8, args: anytype) void {
+                const result = std.fmt.bufPrint(buf, fmt_str, args) catch return;
+                len.* = result.len;
+            }
+        }.call;
 
         // Factor 1: Allocator Kind (most important for Zig)
         const allocator_kind = classifyAllocator(alloc_func);
         switch (allocator_kind) {
             .arena => {
                 score -= 0.6;
-                reason = "ArenaAllocator (batch-freed)";
+                setReason(&reason_buf, &reason_len, "ArenaAllocator (batch-freed)");
             },
             .fixed_buffer => {
                 score -= 0.7;
-                reason = "FixedBufferAllocator (stack-based)";
+                setReason(&reason_buf, &reason_len, "FixedBufferAllocator (stack-based)");
             },
             .testing_allocator => {
                 score -= 0.5;
-                reason = "testing.allocator (leak-checked)";
+                setReason(&reason_buf, &reason_len, "testing.allocator (leak-checked)");
             },
             .general_purpose => {
                 score -= 0.2;
-                reason = "GPA (tracked)";
+                setReason(&reason_buf, &reason_len, "GPA (tracked)");
             },
             .page_allocator => {
                 score += 0.1;
-                reason = "page_allocator (manual)";
+                setReason(&reason_buf, &reason_len, "page_allocator (manual)");
             },
             .custom, .none => {
-                reason = "unknown allocator";
+                setReason(&reason_buf, &reason_len, "unknown allocator");
             },
         }
 
@@ -212,7 +259,7 @@ pub const Tracker = struct {
             switch (container) {
                 .zig_arraylist, .zig_hashmap, .zig_buffer, .zig_multiarraylist => {
                     score -= 0.4;
-                    reason = std.fmt.bufPrint(&reason_buf, "Zig container ({s})", .{@tagName(container)}) catch reason;
+                    fmtReason(&reason_buf, &reason_len, "Zig container ({s})", .{@tagName(container)});
                 },
                 else => {},
             }
@@ -222,15 +269,15 @@ pub const Tracker = struct {
         switch (node.ownership_model) {
             .raii => {
                 score -= 0.3;
-                if (reason.len == 0) reason = "RAII cleanup";
+                if (reason_len == 0) setReason(&reason_buf, &reason_len, "RAII cleanup");
             },
             .gc => {
                 score -= 0.5;
-                if (reason.len == 0) reason = "GC-managed";
+                if (reason_len == 0) setReason(&reason_buf, &reason_len, "GC-managed");
             },
             .refcount => {
                 score -= 0.2;
-                if (reason.len == 0) reason = "refcounted";
+                if (reason_len == 0) setReason(&reason_buf, &reason_len, "refcounted");
             },
             .manual, .hybrid => {},
         }
@@ -238,22 +285,28 @@ pub const Tracker = struct {
         // Factor 4: RAII Cleanup Sites
         if (node.has_raii_cleanup) {
             score -= 0.3;
-            if (reason.len == 0) reason = "has cleanup sites";
+            if (reason_len == 0) setReason(&reason_buf, &reason_len, "has cleanup sites");
         }
 
         // Factor 5: FFI Boundary (higher risk)
         if (is_ffi_boundary) {
             score += 0.2;
-            if (reason.len == 0) reason = "FFI boundary";
+            if (reason_len == 0) setReason(&reason_buf, &reason_len, "FFI boundary");
         }
 
         // Clamp score to [0.0, 1.0]
         score = @max(0.0, @min(1.0, score));
 
-        return .{
+        // Build self-contained LeakConfidence (reason stored inline, no dangling pointer)
+        if (reason_len == 0) {
+            setReason(&reason_buf, &reason_len, "unknown");
+        }
+        const confidence = LeakConfidence{
             .score = score,
-            .reason = if (reason.len > 0) reason else "unknown",
+            .reason_buf = reason_buf,
+            .reason_len = reason_len,
         };
+        return confidence;
     }
 
     /// Check if an allocation should be reported based on confidence threshold.
@@ -300,25 +353,25 @@ test "classifyAllocator - handles short names" {
 }
 
 test "LeakConfidence - severity classification" {
-    const critical = LeakConfidence{ .score = 0.95, .reason = "test" };
+    const critical = LeakConfidence.init(0.95, "test");
     try testing.expect(critical.isCritical());
     try testing.expect(!critical.isHigh());
     try testing.expect(!critical.isMedium());
     try testing.expect(!critical.isLow());
 
-    const high = LeakConfidence{ .score = 0.8, .reason = "test" };
+    const high = LeakConfidence.init(0.8, "test");
     try testing.expect(!high.isCritical());
     try testing.expect(high.isHigh());
     try testing.expect(!high.isMedium());
     try testing.expect(!high.isLow());
 
-    const medium = LeakConfidence{ .score = 0.6, .reason = "test" };
+    const medium = LeakConfidence.init(0.6, "test");
     try testing.expect(!medium.isCritical());
     try testing.expect(!medium.isHigh());
     try testing.expect(medium.isMedium());
     try testing.expect(!medium.isLow());
 
-    const low = LeakConfidence{ .score = 0.3, .reason = "test" };
+    const low = LeakConfidence.init(0.3, "test");
     try testing.expect(!low.isCritical());
     try testing.expect(!low.isHigh());
     try testing.expect(!low.isMedium());

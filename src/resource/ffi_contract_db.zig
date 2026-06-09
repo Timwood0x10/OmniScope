@@ -315,7 +315,9 @@ pub const FFIContractDB = struct {
     }
 
     /// Get all known allocation function names across all libraries.
-    /// Returns empty slice — callers should iterate libraries directly.
+    /// NOTE: Currently unimplemented — returns empty slice. Callers should
+    /// use `isKnownAllocator()` for per-function checks, or iterate
+    /// `self.libraries[].pairs[].alloc_funcs` directly if a full list is needed.
     pub fn getAllAllocFuncs(self: *const FFIContractDB) []const []const u8 {
         _ = self;
         return &.{};

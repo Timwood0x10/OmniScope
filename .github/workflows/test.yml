@@ -2,9 +2,9 @@ name: OmniScope Test Suite
 
 on:
   push:
-    branches: [main, develop, master]
+    branches: [master, improve, dev]
   pull_request:
-    branches: [main, develop, master]
+    branches: [master, improve, dev]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

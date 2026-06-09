@@ -4,6 +4,18 @@ set -eu
 CORPUS_DIR="/Users/scc/code/zigcode/OmniScope/corpus"
 TIMEOUT_SEC=60
 
+# Cross-platform timeout: use gtimeout (GNU coreutils) on macOS if available,
+# otherwise fall back to perl-based alarm wrapper.
+TIMEOUT_CMD="timeout"
+if [[ "$(uname)" == "Darwin" ]]; then
+    if command -v gtimeout &>/dev/null; then
+        TIMEOUT_CMD="gtimeout"
+    else
+        # Fallback: perl alarm wrapper for macOS without GNU coreutils
+        TIMEOUT_CMD=""
+    fi
+fi
+
 typeset -A FILE_ISSUES
 typeset -A FILE_STATUS
 typeset -A FILE_KINDS
@@ -44,8 +56,14 @@ for file in "${FILES[@]}"; do
     rel_path="${file#$CORPUS_DIR/}"
     printf "[%2d/%d] Processing %-55s ..." "$idx" "$TOTAL_FILES" "$rel_path"
 
-    output=$(timeout "${TIMEOUT_SEC}" zig build run -- "$file" 2>&1)
-    rc=$?
+    if [[ -n "$TIMEOUT_CMD" ]]; then
+        output=$("$TIMEOUT_CMD" "${TIMEOUT_SEC}" zig build run -- "$file" 2>&1)
+        rc=$?
+    else
+        # Perl alarm fallback: run command with timeout
+        output=$(perl -e 'alarm shift @ARGV; exec @ARGV' "${TIMEOUT_SEC}" zig build run -- "$file" 2>&1)
+        rc=$?
+    fi
 
     if [ $rc -eq 124 ]; then
         FILE_STATUS[$name]="TIMEOUT"

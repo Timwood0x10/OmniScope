@@ -18,7 +18,6 @@ const DiagnosticWriter = @import("../../pass.zig").DiagnosticWriter;
 
 const Location = @import("../../../diag/issue.zig").Location;
 const Issue = @import("../../../diag/issue.zig").Issue;
-const IssueKind = @import("../../../diag/issue.zig").IssueKind;
 const Severity = @import("../../../diag/issue.zig").Severity;
 const TraceEntry = @import("../../../diag/issue.zig").TraceEntry;
 const IssueCandidate = @import("../resource/issue_candidate_builder.zig").IssueCandidate;

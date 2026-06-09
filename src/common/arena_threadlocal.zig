@@ -95,6 +95,10 @@ pub const ThreadLocalArena = struct {
         return .{
             .backing_allocator = backing_allocator,
             .block_size = default_block_size,
+            // initCapacity(0) is safe: zero-capacity alloc never fails on any
+            // standard allocator (page_allocator, GPA, etc.). catch unreachable
+            // is justified because a failure would only occur with a custom
+            // allocator that rejects zero-size allocations.
             .all_arenas = std.ArrayList(*Arena).initCapacity(backing_allocator, 0) catch unreachable,
             .arenas_mutex = .{},
             .global_stats = ArenaStats{},
@@ -114,6 +118,7 @@ pub const ThreadLocalArena = struct {
         return .{
             .backing_allocator = backing_allocator,
             .block_size = @max(block_size, 1024), // Minimum 1KB
+            // initCapacity(0) is safe: see init() for justification.
             .all_arenas = std.ArrayList(*Arena).initCapacity(backing_allocator, 0) catch unreachable,
             .arenas_mutex = .{},
             .global_stats = ArenaStats{},

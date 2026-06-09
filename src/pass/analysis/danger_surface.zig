@@ -81,15 +81,16 @@ pub const DangerSurfacePass = struct {
         // Avoids StringHashMap's eql string comparison on every contains().
         var ffi_set = std.StringHashMap(void).init(ctx.allocator);
         defer ffi_set.deinit();
-        try ffi_set.ensureTotalCapacity(@as(u32, @intCast(ffi_count * 2)));
+        const ffi_cap = @min(ffi_count * 2, std.math.maxInt(u32));
+        try ffi_set.ensureTotalCapacity(@as(u32, @intCast(ffi_cap)));
         var ffi_hash_set = std.AutoHashMap(u64, void).init(ctx.allocator);
         defer ffi_hash_set.deinit();
-        try ffi_hash_set.ensureTotalCapacity(@as(u32, @intCast(ffi_count * 2)));
+        try ffi_hash_set.ensureTotalCapacity(@as(u32, @intCast(ffi_cap)));
         for (ffis) |surface| {
             if (surface.is_ffi_boundary) {
-                ffi_set.put(surface.callee_name, {}) catch {};
+                try ffi_set.put(surface.callee_name, {});
                 const hash = std.hash.Wyhash.hash(0, surface.callee_name);
-                ffi_hash_set.put(hash, {}) catch {};
+                try ffi_hash_set.put(hash, {});
             }
         }
 
@@ -105,7 +106,7 @@ pub const DangerSurfacePass = struct {
                     if (@intFromPtr(bb) == 0) continue;
                     const func = c.LLVMGetBasicBlockParent(bb);
                     if (@intFromPtr(func) == 0) continue;
-                    ffi_func_set.put(@as(u64, @intFromPtr(func)), {}) catch {};
+                    try ffi_func_set.put(@as(u64, @intFromPtr(func)), {});
                 }
             }
             for (mg.call_rets.items) |ret_edge| {
@@ -116,7 +117,7 @@ pub const DangerSurfacePass = struct {
                     if (@intFromPtr(bb) == 0) continue;
                     const func = c.LLVMGetBasicBlockParent(bb);
                     if (@intFromPtr(func) == 0) continue;
-                    ffi_func_set.put(@as(u64, @intFromPtr(func)), {}) catch {};
+                    try ffi_func_set.put(@as(u64, @intFromPtr(func)), {});
                 }
             }
         }

@@ -1,6 +1,6 @@
 //! FFI Boundary Detection Pass (Orchestrator)
 //!
-//! This file has been refactored from 1601 lines to <200 lines by extracting:
+//! This file has been refactored from 1601 lines by extracting:
 //! - Zone classification → ffi_zone_check.zig
 //! - Core boundary checks → ffi_boundary_check.zig
 //! - Noise filtering → ffi_noise_filter.zig

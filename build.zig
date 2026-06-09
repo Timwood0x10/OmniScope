@@ -30,27 +30,6 @@ fn configureLLVM(b: *std.Build, compile: *std.Build.Step.Compile, llvm_path: []c
     compile.root_module.addRPath(.{ .cwd_relative = lib });
 }
 
-/// Configure a Step.Compile with the C++ bridge source for IR parsing
-fn configureCppBridge(b: *std.Build, compile: *std.Build.Step.Compile, llvm_path: []const u8) void {
-    compile.root_module.addCSourceFile(.{ .file = b.path("src/ir/llvm_cpp_bridge.cpp"), .flags = &.{ "-std=c++17", "-fno-exceptions", "-fno-rtti" } });
-    compile.root_module.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ llvm_path, "include" }) });
-
-    const target: std.Target = if (compile.root_module.resolved_target) |rt|
-        rt.result
-    else
-        @import("builtin").target;
-
-    const cxxlib: []const u8 = switch (target.os.tag) {
-        .macos, .ios, .tvos, .watchos => "c++",
-        .linux, .freebsd, .openbsd, .netbsd => "stdc++",
-        .windows => "",
-        else => "c++",
-    };
-    if (cxxlib.len > 0) {
-        compile.root_module.linkSystemLibrary(cxxlib, .{});
-    }
-}
-
 /// Build configuration for OmniScope
 pub fn build(b: *std.Build) void {
     // Parse build options

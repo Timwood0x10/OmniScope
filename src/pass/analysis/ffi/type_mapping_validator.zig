@@ -802,35 +802,43 @@ test "Pointer validation - all mismatch types" {
     var diag = DiagnosticWriter.init(allocator);
 
     // Mutability mismatch
-    var issues = validator.validatePointerType(
-        createPointerType(&int32, true, false, 64),
-        createPointerType(&int32, false, false, 64),
-        loc,
-        &diag,
-    ) catch unreachable;
-    defer allocator.free(issues);
-    try std.testing.expect(issues.len > 0);
-    try std.testing.expectEqual(PointerMismatchKind.mutability_mismatch, issues[0].kind);
+    {
+        var issues = validator.validatePointerType(
+            createPointerType(&int32, true, false, 64),
+            createPointerType(&int32, false, false, 64),
+            loc,
+            &diag,
+        ) catch unreachable;
+        defer allocator.free(issues);
+        try std.testing.expect(issues.len > 0);
+        try std.testing.expectEqual(PointerMismatchKind.mutability_mismatch, issues[0].kind);
+    }
 
     // Element type mismatch
-    issues = validator.validatePointerType(
-        createPointerType(&int32, false, false, 64),
-        createPointerType(&int64, false, false, 64),
-        loc,
-        &diag,
-    ) catch unreachable;
-    var found = false;
-    for (issues) |i| if (i.kind == .element_type_mismatch) found = true;
-    try std.testing.expect(found);
+    {
+        var issues = validator.validatePointerType(
+            createPointerType(&int32, false, false, 64),
+            createPointerType(&int64, false, false, 64),
+            loc,
+            &diag,
+        ) catch unreachable;
+        defer allocator.free(issues);
+        var found = false;
+        for (issues) |i| if (i.kind == .element_type_mismatch) found = true;
+        try std.testing.expect(found);
+    }
 
     // Compatible pointers
-    issues = validator.validatePointerType(
-        createPointerType(&int32, false, false, 64),
-        createPointerType(&int32, false, false, 64),
-        loc,
-        &diag,
-    ) catch unreachable;
-    try std.testing.expectEqual(@as(usize, 0), issues.len);
+    {
+        var issues = validator.validatePointerType(
+            createPointerType(&int32, false, false, 64),
+            createPointerType(&int32, false, false, 64),
+            loc,
+            &diag,
+        ) catch unreachable;
+        defer allocator.free(issues);
+        try std.testing.expectEqual(@as(usize, 0), issues.len);
+    }
 }
 
 test "Array validation - all mismatch types" {
@@ -842,21 +850,29 @@ test "Array validation - all mismatch types" {
     var diag = DiagnosticWriter.init(allocator);
 
     // Length mismatch
-    var issues = validator.validateArrayType(createArrayType(&int32, 10, true), createArrayType(&int32, 20, true), loc, &diag) catch unreachable;
-    defer allocator.free(issues);
-    var found = false;
-    for (issues) |i| if (i.kind == .length_mismatch) found = true;
-    try std.testing.expect(found);
+    {
+        var issues = validator.validateArrayType(createArrayType(&int32, 10, true), createArrayType(&int32, 20, true), loc, &diag) catch unreachable;
+        defer allocator.free(issues);
+        var found = false;
+        for (issues) |i| if (i.kind == .length_mismatch) found = true;
+        try std.testing.expect(found);
+    }
 
     // Element type mismatch
-    issues = validator.validateArrayType(createArrayType(&int32, 10, true), createArrayType(&int64, 10, true), loc, &diag) catch unreachable;
-    found = false;
-    for (issues) |i| if (i.kind == .element_type_mismatch) found = true;
-    try std.testing.expect(found);
+    {
+        var issues = validator.validateArrayType(createArrayType(&int32, 10, true), createArrayType(&int64, 10, true), loc, &diag) catch unreachable;
+        defer allocator.free(issues);
+        var found = false;
+        for (issues) |i| if (i.kind == .element_type_mismatch) found = true;
+        try std.testing.expect(found);
+    }
 
     // Compatible arrays
-    issues = validator.validateArrayType(createArrayType(&int32, 10, true), createArrayType(&int32, 10, true), loc, &diag) catch unreachable;
-    try std.testing.expectEqual(@as(usize, 0), issues.len);
+    {
+        var issues = validator.validateArrayType(createArrayType(&int32, 10, true), createArrayType(&int32, 10, true), loc, &diag) catch unreachable;
+        defer allocator.free(issues);
+        try std.testing.expectEqual(@as(usize, 0), issues.len);
+    }
 }
 
 test "resolveTypeWidth - platform-dependent types" {

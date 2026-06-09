@@ -117,7 +117,7 @@ pub const SemanticRegistry = struct {
         var map = std.StringHashMap(FunctionSemantics).init(std.heap.page_allocator);
         var list = std.ArrayList(FunctionSemantics).initCapacity(std.heap.page_allocator, 0) catch return;
 
-        // Iterate all 15 layer arrays and partition into exact vs non-exact.
+        // Iterate all 16 layer arrays and partition into exact vs non-exact.
         // inline for ensures compile-time unrolling — zero runtime loop overhead.
         const all_layers = [_][]const FunctionSemantics{
             &layer1,           &layer2,          &layer3,
@@ -133,16 +133,25 @@ pub const SemanticRegistry = struct {
                     // O(1) amortized insert. Duplicate patterns are fine —
                     // first-wins semantics preserved by checking containsKey first.
                     if (!map.contains(sem.pattern)) {
-                        map.put(sem.pattern, sem) catch continue;
+                        map.put(sem.pattern, sem) catch |err| {
+                            std.log.warn("SemanticRegistry: OOM inserting exact pattern '{s}': {}", .{ sem.pattern, err });
+                            continue;
+                        };
                     }
                 } else {
-                    list.append(std.heap.page_allocator, sem) catch continue;
+                    list.append(std.heap.page_allocator, sem) catch |err| {
+                        std.log.warn("SemanticRegistry: OOM appending non-exact pattern '{s}': {}", .{ sem.pattern, err });
+                        continue;
+                    };
                 }
             }
         }
 
         // Publish non_exact slice first (atomic store not needed — single writer).
-        non_exact = list.toOwnedSlice(std.heap.page_allocator) catch &.{};
+        non_exact = list.toOwnedSlice(std.heap.page_allocator) catch |err| {
+            std.log.warn("SemanticRegistry: OOM finalizing non_exact slice: {}", .{err});
+            return;
+        };
         // Publish map last — signals tables are ready.
         exact_map = map;
     }

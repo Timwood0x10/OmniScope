@@ -867,6 +867,6 @@ pub fn generateReturnHeapPtrCandidate(
     }
     candidate.is_on_ffi_path = ctx.isOnDangerPathFull(@as(u64, @intFromPtr(_inst)));
     candidate.addEvidence("Heap pointer returned to caller (potential factory pattern)") catch {};
-    candidate.addEvidenceFmt("Function: {s}", .{func_name}) catch unreachable;
+    candidate.addEvidenceFmt("Function: {s}", .{func_name}) catch {};
     return candidate;
 }

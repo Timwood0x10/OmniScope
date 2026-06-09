@@ -42,7 +42,11 @@ fn hasTypeMismatchSignal(match: *const call_graph.FFIMatch) bool {
         "uintptr_t", "intptr_t", "long", "unsigned",
     };
     for (type_unsafe_patterns) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+        // Use exact match or suffix/prefix match to avoid substring false positives
+        if (std.mem.eql(u8, func_name, pattern) or
+            std.mem.endsWith(u8, func_name, pattern) or
+            std.mem.startsWith(u8, func_name, pattern))
+        {
             return true;
         }
     }
@@ -58,7 +62,12 @@ fn hasMemorySafetyRisk(match: *const call_graph.FFIMatch) bool {
         "strncat",
     };
     for (unsafe_mem_patterns) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+        // Use exact/suffix/prefix match to avoid substring false positives
+        // (e.g. "my_malloc_wrapper" should still match, but "smalloc" should not)
+        const matched = std.mem.eql(u8, func_name, pattern) or
+            std.mem.endsWith(u8, func_name, pattern) or
+            std.mem.startsWith(u8, func_name, pattern);
+        if (matched) {
             const safe_wrappers = [_][]const u8{
                 "safe_malloc", "checked_alloc", "bounded_copy",
             };
@@ -86,7 +95,11 @@ fn hasLifetimeIssue(match: *const call_graph.FFIMatch) bool {
         "CString::into_raw",
     };
     for (rust_lifetime_patterns) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+        // Use exact/suffix/prefix match to avoid substring false positives
+        if (std.mem.eql(u8, func_name, pattern) or
+            std.mem.endsWith(u8, func_name, pattern) or
+            std.mem.startsWith(u8, func_name, pattern))
+        {
             return true;
         }
     }
@@ -104,7 +117,12 @@ fn hasTrustBoundaryViolation(match: *const call_graph.FFIMatch) bool {
         "external", "untrusted", "remote",
     };
     for (trust_boundary_indicators) |indicator| {
-        if (std.mem.indexOf(u8, func_name, indicator) != null) {
+        // Use exact/suffix/prefix match to avoid substring false positives
+        // (e.g. "user" should not match "abuser")
+        if (std.mem.eql(u8, func_name, indicator) or
+            std.mem.endsWith(u8, func_name, indicator) or
+            std.mem.startsWith(u8, func_name, indicator))
+        {
             return true;
         }
     }
@@ -121,7 +139,12 @@ fn hasMissingValidation(match: *const call_graph.FFIMatch) bool {
     };
     var has_validation = false;
     for (validation_patterns) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+        // Use startsWith/endsWith/eql to avoid substring false positives
+        // (e.g. "unsafe" should not match "safe")
+        const matched = std.mem.eql(u8, func_name, pattern) or
+            std.mem.startsWith(u8, func_name, pattern) or
+            std.mem.endsWith(u8, func_name, pattern);
+        if (matched) {
             has_validation = true;
             break;
         }
@@ -132,7 +155,9 @@ fn hasMissingValidation(match: *const call_graph.FFIMatch) bool {
             "process", "handle", "parse",
         };
         for (risky_prefixes) |prefix| {
-            if (std.mem.indexOf(u8, func_name, prefix) != null) {
+            if (std.mem.startsWith(u8, func_name, prefix) or
+                std.mem.endsWith(u8, func_name, prefix))
+            {
                 return true;
             }
         }
@@ -214,28 +239,36 @@ pub fn calculateFFIConfidence(signal_count: u32, vuln_type: FFIVulnType, boundar
 
 /// Classify FFI vulnerability type based on function name patterns.
 pub fn classifyFFIVulnType(func_name: []const u8) FFIVulnType {
-    if (std.mem.indexOf(u8, func_name, "system") != null or
-        std.mem.indexOf(u8, func_name, "exec") != null or
-        std.mem.indexOf(u8, func_name, "popen") != null)
+    // Use exact/suffix/prefix match to avoid substring false positives
+    // (e.g. "my_system_call" is fine as prefix match, "subsystem" should not match "system")
+    if (std.mem.startsWith(u8, func_name, "system") or
+        std.mem.endsWith(u8, func_name, "system") or
+        std.mem.eql(u8, func_name, "system") or
+        std.mem.startsWith(u8, func_name, "exec") or
+        std.mem.endsWith(u8, func_name, "exec") or
+        std.mem.eql(u8, func_name, "exec") or
+        std.mem.startsWith(u8, func_name, "popen") or
+        std.mem.endsWith(u8, func_name, "popen") or
+        std.mem.eql(u8, func_name, "popen"))
     {
         return .command_injection;
     }
-    if (std.mem.indexOf(u8, func_name, "strcpy") != null or
-        std.mem.indexOf(u8, func_name, "strcat") != null or
-        std.mem.indexOf(u8, func_name, "gets") != null or
-        std.mem.indexOf(u8, func_name, "sprintf") != null)
+    if (std.mem.eql(u8, func_name, "strcpy") or std.mem.endsWith(u8, func_name, "strcpy") or
+        std.mem.eql(u8, func_name, "strcat") or std.mem.endsWith(u8, func_name, "strcat") or
+        std.mem.eql(u8, func_name, "gets") or std.mem.endsWith(u8, func_name, "gets") or
+        std.mem.eql(u8, func_name, "sprintf") or std.mem.endsWith(u8, func_name, "sprintf"))
     {
         return .buffer_overflow;
     }
-    if (std.mem.indexOf(u8, func_name, "printf") != null or
-        std.mem.indexOf(u8, func_name, "fprintf") != null or
-        std.mem.indexOf(u8, func_name, "sprintf") != null or
-        std.mem.indexOf(u8, func_name, "vprintf") != null)
+    if (std.mem.eql(u8, func_name, "printf") or std.mem.endsWith(u8, func_name, "printf") or
+        std.mem.eql(u8, func_name, "fprintf") or std.mem.endsWith(u8, func_name, "fprintf") or
+        std.mem.eql(u8, func_name, "sprintf") or std.mem.endsWith(u8, func_name, "sprintf") or
+        std.mem.eql(u8, func_name, "vprintf") or std.mem.endsWith(u8, func_name, "vprintf"))
     {
         return .format_string;
     }
-    if (std.mem.indexOf(u8, func_name, "setjmp") != null or
-        std.mem.indexOf(u8, func_name, "longjmp") != null)
+    if (std.mem.eql(u8, func_name, "setjmp") or std.mem.endsWith(u8, func_name, "setjmp") or
+        std.mem.eql(u8, func_name, "longjmp") or std.mem.endsWith(u8, func_name, "longjmp"))
     {
         return .control_flow;
     }
@@ -285,7 +318,9 @@ pub fn isWhitelistedFFI(match: *const call_graph.FFIMatch) bool {
         "log_",       "trace_",    "diag_",     "dump_",
     };
     for (stdlib_prefixes) |prefix| {
-        if (std.mem.indexOf(u8, func_name, prefix) != null) return true;
+        // Use startsWith for prefix patterns to avoid false positives
+        // (e.g. "proxy" should not match "antiproxy")
+        if (std.mem.startsWith(u8, func_name, prefix)) return true;
     }
 
     const safe_patterns = [_][]const u8{
@@ -294,7 +329,12 @@ pub fn isWhitelistedFFI(match: *const call_graph.FFIMatch) bool {
         "size",
     };
     for (safe_patterns) |pattern| {
-        if (std.mem.indexOf(u8, func_name, pattern) != null) {
+        // Use startsWith/endsWith/eql to avoid substring false positives
+        // CRITICAL: "safe" must not match "unsafe", "lock" must not match "deadlock"
+        const matched = std.mem.eql(u8, func_name, pattern) or
+            std.mem.startsWith(u8, func_name, pattern) or
+            std.mem.endsWith(u8, func_name, pattern);
+        if (matched) {
             if (!isDangerousFFIPattern(match)) return true;
         }
     }

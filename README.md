@@ -68,7 +68,7 @@ flowchart TD
     Calls --> Flow[Pointer Flow]
     Calls --> Lifetime[Pointer Lifetime]
     Flow --> FFI[FFI Boundary / Type / ABI / Layout / String / Unwind]
-    Lifetime --> Danger[Danger Surface]
+    Lifetime --> Danger[Danger Surace]
     Danger --> Boundary[FFI Boundary]
     Boundary --> Ownership[Cross-lang Checks]
     Danger --> Safety[Memory Safety / Free Validation]

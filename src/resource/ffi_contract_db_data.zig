@@ -24,9 +24,19 @@ pub fn builtinLibraries() []const LibraryContract {
             .pairs = &[_]AllocPairRule{
                 .{
                     .name = "SSL_CTX",
-                    .alloc_funcs = &[_][]const u8{ "SSL_CTX_new", "TLS_method", "TLS_server_method", "TLS_client_method" },
+                    .alloc_funcs = &[_][]const u8{"SSL_CTX_new"},
                     .release_funcs = &[_][]const u8{"SSL_CTX_free"},
                     .ownership = .caller,
+                    .confidence = 0.95,
+                },
+                .{
+                    .name = "SSL_method",
+                    // TLS_method/TLS_server_method/TLS_client_method return const SSL_METHOD*
+                    // pointers — they are NOT allocation functions (no matching free).
+                    // Tracked here so isValidRelease() can recognize them as non-leaking.
+                    .alloc_funcs = &[_][]const u8{ "TLS_method", "TLS_server_method", "TLS_client_method" },
+                    .release_funcs = &[_][]const u8{},
+                    .ownership = .callee,
                     .confidence = 0.95,
                 },
                 .{

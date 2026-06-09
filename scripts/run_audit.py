@@ -19,7 +19,7 @@ ll_files = (
 )
 
 print("=" * 70)
-print("  OmniScope v0.1.7 - FFI/Unsafe Boundary Security Audit")
+print("  OmniScope v0.2.0 - FFI/Unsafe Boundary Security Audit")
 print(f"  Output: {OUTPUT_DIR}")
 print("=" * 70)
 print()
@@ -43,7 +43,18 @@ for ll_file in sorted(ll_files):
         print(f"[FAIL] {name} (exit code {proc.returncode})")
         with open(log_out, "w") as lf:
             lf.write(proc.stderr)
-        results.append({"name": name, "status": "fail", "issues": 0})
+        # Save stdout/JSON for debugging even on failure
+        with open(json_out, "w") as jf:
+            jf.write(proc.stdout)
+        # Try parsing JSON from stdout as fallback
+        count = 0
+        try:
+            data = json.loads(proc.stdout)
+            issues = data.get("issues", data.get("diagnostics", []))
+            count = len(issues)
+        except:
+            pass
+        results.append({"name": name, "status": "fail", "issues": count})
         continue
 
     # Save logs

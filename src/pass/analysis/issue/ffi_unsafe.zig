@@ -1,12 +1,14 @@
 //! FFI Unsafe Detection Pass
 //!
 //! Enhanced FFI security analysis with precision-optimized reporting.
-//! Implements 4-layer filtering to reduce false positives by 60-80%:
+//! Implements 3-layer filtering to reduce false positives by 60-80%:
 //!
 //!   Layer 1: Confidence threshold (>= 0.85 for generic calls)
 //!   Layer 2: Whitelist for known-safe patterns (stdlib, tests, safe naming)
 //!   Layer 3: Auxiliary evidence requirement (danger signals + data flow)
-//!   Layer 4: Deduplication (per-function aggregation)
+//!
+//! Note: Layer 4 (deduplication) was removed due to Zig 0.15.2 compiler
+//! limitations with nested struct types in ArrayList.
 
 const std = @import("std");
 const log = @import("../../../common/log.zig");
@@ -96,13 +98,6 @@ pub const FFIUnsafePass = struct {
     const HighRiskKeywords = &[_][]const u8{
         "unsafe",   "raw",     "unchecked", "eval",  "inject",
         "overflow", "corrupt", "exploit",   "shell", "command",
-    };
-
-    // Key type for Layer 4 deduplication: tracks (caller_function, vulnerability_type) pairs
-    // to avoid reporting the same issue type multiple times in the same function.
-    const DedupKey = struct {
-        caller_func: []const u8,
-        vuln_type: IssueKind,
     };
 
     pub fn run(ctx: *PassContext, diag: *DiagnosticWriter) !void {
@@ -287,8 +282,32 @@ pub const FFIUnsafePass = struct {
             }
         }
 
-        // Fallback removed: all dangerous pattern detection routes through
-        // SummaryStore effect queries. Unknown functions are treated as safe.
+        // Fallback: When SummaryStore is unavailable (not loaded) or the function
+        // is not registered, check against a hardcoded list of known-dangerous C
+        // library functions. Without this fallback, critical functions like
+        // system(), strcpy(), setjmp() would be silently treated as safe.
+        const dangerous_functions = [_][]const u8{
+            // Command execution
+            "system",  "popen",     "execve",     "execvp",   "execv",
+            "execl",   "execlp",    "execle",     "fexecve",
+            // Buffer manipulation (unbounded)
+             "strcpy",
+            "strcat",  "gets",      "sprintf",    "vsprintf",
+            // Control flow (non-local)
+            "setjmp",
+            "longjmp", "sigsetjmp", "siglongjmp",
+            // Dynamic loading
+            "dlopen",   "dlsym",
+        };
+        for (dangerous_functions) |pattern| {
+            if (std.mem.eql(u8, clean, pattern) or
+                std.mem.startsWith(u8, clean, pattern) or
+                std.mem.endsWith(u8, clean, pattern))
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 

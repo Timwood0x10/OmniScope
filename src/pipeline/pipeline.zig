@@ -733,7 +733,7 @@ pub const Pipeline = struct {
                                     base_confidence,
                                     zig_confidence.score,
                                     rec.ptr_id,
-                                    zig_confidence.reason,
+                                    zig_confidence.reason(),
                                 });
                                 base_confidence = zig_confidence.score;
                             }
@@ -843,7 +843,7 @@ pub const Pipeline = struct {
                                     base_confidence,
                                     zig_confidence.score,
                                     rec.ptr_id,
-                                    zig_confidence.reason,
+                                    zig_confidence.reason(),
                                 });
                                 base_confidence = zig_confidence.score;
                             }

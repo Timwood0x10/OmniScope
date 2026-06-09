@@ -330,7 +330,7 @@ pub const FFIAnalysisPass = struct {
                                 diag.warn("Free operation missing pointer argument at {s}", .{func_name});
                                 continue;
                             }
-                            const ptr_value_id: u64 = @intFromPtr(ptr_arg orelse continue);
+                            const ptr_value_id: u64 = @intFromPtr(ptr_arg);
                             const free_info = FreeInfo{
                                 .func_name = func_name,
                                 .language = language,
@@ -340,7 +340,7 @@ pub const FFIAnalysisPass = struct {
                             if (self.free_sites.getPtr(ptr_value_id)) |list_ptr| {
                                 try list_ptr.append(self.allocator, free_info);
                             } else {
-                                var list = std.ArrayList(FreeInfo).initCapacity(self.allocator, 0) catch return;
+                                var list = std.ArrayList(FreeInfo).initCapacity(self.allocator, 0) catch return error.OutOfMemory;
                                 errdefer {
                                     _ = &list;
                                     list.deinit(self.allocator);
@@ -352,7 +352,7 @@ pub const FFIAnalysisPass = struct {
                             if (self.free_bb_map.getPtr(ptr_value_id)) |bb_list_ptr| {
                                 try bb_list_ptr.append(self.allocator, bb);
                             } else {
-                                var bb_list = std.ArrayList(c.LLVMBasicBlockRef).initCapacity(self.allocator, 0) catch return;
+                                var bb_list = std.ArrayList(c.LLVMBasicBlockRef).initCapacity(self.allocator, 0) catch return error.OutOfMemory;
                                 errdefer bb_list.deinit(self.allocator);
                                 try bb_list.append(self.allocator, bb);
                                 try self.free_bb_map.put(ptr_value_id, bb_list);

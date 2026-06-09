@@ -26,11 +26,11 @@ case "$MODE" in
     ELAPSED=$(( (END - START) / 1000000 ))
     
     if echo "$RESULT" | grep -q "error:"; then
-      echo -e "${RED}❌ Tests FAILED (${ELAPED}ms)${NC}"
+      echo -e "${RED}❌ Tests FAILED (${ELAPSED}ms)${NC}"
       echo "$RESULT" | grep "failed:" | head -5
       exit 1
     else
-      echo -e "${GREEN}✅ All tests PASSED (${ELAPED}ms)${NC}"
+      echo -e "${GREEN}✅ All tests PASSED (${ELAPSED}ms)${NC}"
     fi
     ;;
 
