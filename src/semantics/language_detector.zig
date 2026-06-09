@@ -27,10 +27,72 @@ pub const DetectionMethod = enum {
 };
 
 /// Module-level language detection result
+///
+/// T8 Enhancement: `secondary_languages` records non-dominant languages detected
+/// in the module. A module with secondary languages should NOT be treated as a
+/// pure single-language module, even if `language` (dominant) has high confidence.
+///
+/// This fixes R2/R3 from FFI_DETECTION_GAPS_PLAN.md: modules like c_hash_c_bridge.ll
+/// (C module calling C++ mangled symbols) were classified as pure C, causing FFI
+/// boundary detection to be skipped entirely.
 pub const LanguageProfile = struct {
     language: Language,
     confidence: f32,
     method: DetectionMethod,
+    /// Non-dominant languages detected in the module (T8).
+    /// Empty means the module appears to be single-language.
+    /// Populated by detectModuleLanguage when multiple language signals are found.
+    secondary_languages: SecondaryLangList,
+
+    /// Maximum secondary languages to track.
+    pub const MAX_SECONDARY: usize = 4;
+    pub const SecondaryLangList = struct {
+        items: [MAX_SECONDARY]Language,
+        len: usize,
+
+        pub fn init() SecondaryLangList {
+            return .{ .items = undefined, .len = 0 };
+        }
+
+        pub fn appendAssumeCapacity(self: *SecondaryLangList, item: Language) void {
+            if (self.len < MAX_SECONDARY) {
+                self.items[self.len] = item;
+                self.len += 1;
+            }
+        }
+
+        pub fn constSlice(self: *const SecondaryLangList) []const Language {
+            return self.items[0..self.len];
+        }
+    };
+
+    pub fn initSingle(lang: Language, conf: f32, meth: DetectionMethod) LanguageProfile {
+        return .{
+            .language = lang,
+            .confidence = conf,
+            .method = meth,
+            .secondary_languages = SecondaryLangList.init(),
+        };
+    }
+
+    pub fn initMulti(lang: Language, conf: f32, meth: DetectionMethod, secondaries: []const Language) LanguageProfile {
+        var list = SecondaryLangList.init();
+        for (secondaries) |s| {
+            list.appendAssumeCapacity(s);
+        }
+        return .{
+            .language = lang,
+            .confidence = conf,
+            .method = meth,
+            .secondary_languages = list,
+        };
+    }
+
+    /// True if the module has multiple language signals (T8).
+    /// Callers should NOT skip FFI analysis when this is true.
+    pub fn isMultiLanguage(self: *const LanguageProfile) bool {
+        return self.secondary_languages.len > 0;
+    }
 };
 
 /// Maximum number of CU entries to scan during metadata-based detection.
@@ -105,13 +167,13 @@ fn detectFromMetadata(module: c.LLVMModuleRef, allocator: std.mem.Allocator) ?La
                         if (producer_ptr != null and producer_len > 0) {
                             const producer = producer_ptr[0..producer_len];
                             if (std.mem.startsWith(u8, producer, "rustc version")) {
-                                return LanguageProfile{ .language = .rust, .confidence = 0.95, .method = .metadata };
+                                return LanguageProfile.initSingle(.rust, 0.95, .metadata);
                             }
                             if (std.mem.startsWith(u8, producer, "zig ")) {
-                                return LanguageProfile{ .language = .zig, .confidence = 0.95, .method = .metadata };
+                                return LanguageProfile.initSingle(.zig, 0.95, .metadata);
                             }
                             if (std.mem.startsWith(u8, producer, "Go cmd/compile")) {
-                                return LanguageProfile{ .language = .go, .confidence = 0.95, .method = .metadata };
+                                return LanguageProfile.initSingle(.go, 0.95, .metadata);
                             }
                             if (std.mem.startsWith(u8, producer, "clang")) {
                                 // Clang-produced code could be C or C++; defer to other strategies
@@ -131,16 +193,16 @@ fn detectFromMetadata(module: c.LLVMModuleRef, allocator: std.mem.Allocator) ?La
                 if (file_ptr != null and file_len > 0) {
                     const filename = file_ptr[0..file_len];
                     if (std.mem.endsWith(u8, filename, ".zig")) {
-                        return LanguageProfile{ .language = .zig, .confidence = 0.85, .method = .metadata };
+                        return LanguageProfile.initSingle(.zig, 0.85, .metadata);
                     }
                     if (std.mem.endsWith(u8, filename, ".rs")) {
-                        return LanguageProfile{ .language = .rust, .confidence = 0.85, .method = .metadata };
+                        return LanguageProfile.initSingle(.rust, 0.85, .metadata);
                     }
                     if (std.mem.endsWith(u8, filename, ".go")) {
-                        return LanguageProfile{ .language = .go, .confidence = 0.85, .method = .metadata };
+                        return LanguageProfile.initSingle(.go, 0.85, .metadata);
                     }
                     if (std.mem.endsWith(u8, filename, ".c")) {
-                        return LanguageProfile{ .language = .c, .confidence = 0.85, .method = .metadata };
+                        return LanguageProfile.initSingle(.c, 0.85, .metadata);
                     }
                     if (std.mem.endsWith(u8, filename, ".cpp") or
                         std.mem.endsWith(u8, filename, ".cc") or
@@ -148,7 +210,7 @@ fn detectFromMetadata(module: c.LLVMModuleRef, allocator: std.mem.Allocator) ?La
                         std.mem.endsWith(u8, filename, ".hpp") or
                         std.mem.endsWith(u8, filename, ".h"))
                     {
-                        return LanguageProfile{ .language = .cpp, .confidence = 0.85, .method = .metadata };
+                        return LanguageProfile.initSingle(.cpp, 0.85, .metadata);
                     }
                 }
             }
@@ -216,7 +278,7 @@ fn detectFromMetadata(module: c.LLVMModuleRef, allocator: std.mem.Allocator) ?La
 
             const share = @as(f32, @floatFromInt(max_count)) / @as(f32, @floatFromInt(total_sampled));
             if (share >= 0.6) {
-                return LanguageProfile{ .language = dominant, .confidence = share * 0.95, .method = .metadata };
+                return LanguageProfile.initSingle(dominant, share * 0.95, .metadata);
             }
         }
     }
@@ -263,13 +325,13 @@ fn detectFromMetadata(module: c.LLVMModuleRef, allocator: std.mem.Allocator) ?La
 
                     const ident_str = str_ptr[0..str_len];
                     if (std.mem.startsWith(u8, ident_str, "rustc version")) {
-                        return LanguageProfile{ .language = .rust, .confidence = 0.90, .method = .metadata };
+                        return LanguageProfile.initSingle(.rust, 0.90, .metadata);
                     }
                     if (std.mem.startsWith(u8, ident_str, "zig ")) {
-                        return LanguageProfile{ .language = .zig, .confidence = 0.90, .method = .metadata };
+                        return LanguageProfile.initSingle(.zig, 0.90, .metadata);
                     }
                     if (std.mem.startsWith(u8, ident_str, "Go cmd/compile")) {
-                        return LanguageProfile{ .language = .go, .confidence = 0.90, .method = .metadata };
+                        return LanguageProfile.initSingle(.go, 0.90, .metadata);
                     }
                     // clang in llvm.ident doesn't distinguish C vs C++
                 }
@@ -287,10 +349,21 @@ fn detectFromMetadata(module: c.LLVMModuleRef, allocator: std.mem.Allocator) ?La
 ///   2. Function-name sampling — statistical pattern matching
 ///   3. Personality function attributes
 ///   4. Global variable name patterns
+///
+/// T8 Enhancement: Returns `secondary_languages` listing non-dominant languages
+/// that received significant votes. Modules with secondary languages should NOT
+/// be treated as pure single-language modules by downstream passes.
 pub fn detectModuleLanguage(module: c.LLVMModuleRef, allocator: std.mem.Allocator) LanguageProfile {
     // Priority 1: Metadata detection — highest confidence, safe DI API approach.
     // Only falls back to sampling/personality/globals if metadata is absent.
     if (detectFromMetadata(module, allocator)) |meta_result| {
+        // T8: Even metadata-based detection should check for mixed-language signals.
+        // Scan for secondary languages from declare symbols with different mangling.
+        var secondaries = LanguageProfile.SecondaryLangList.init();
+        detectSecondaryLanguages(module, &secondaries);
+        if (secondaries.len > 0) {
+            return LanguageProfile.initMulti(meta_result.language, meta_result.confidence, meta_result.method, secondaries.constSlice());
+        }
         return meta_result;
     }
 
@@ -341,11 +414,69 @@ pub fn detectModuleLanguage(module: c.LLVMModuleRef, allocator: std.mem.Allocato
     }
 
     if (max_vote < data.MIN_VOTE_THRESHOLD or total_weight < data.MIN_VOTE_THRESHOLD) {
-        return .{ .language = .unknown, .confidence = 0.0, .method = .unknown };
+        return LanguageProfile.initSingle(.unknown, 0.0, .unknown);
     }
 
     const confidence = @min(max_vote / total_weight, 1.0);
-    return .{ .language = dominant, .confidence = confidence, .method = winning_method };
+
+    // T8: Collect secondary languages — non-dominant languages with significant votes.
+    var secondaries = LanguageProfile.SecondaryLangList.init();
+    if (total_weight > 0) {
+        const secondary_threshold = max_vote * 0.15; // 15% of dominant vote
+        for (weighted_votes, 0..) |vote, i| {
+            const lang = indexToLang(i);
+            if (lang == dominant) continue;
+            if (lang == .unknown) continue;
+            if (vote >= secondary_threshold) {
+                secondaries.appendAssumeCapacity(lang);
+            }
+        }
+    }
+
+    // Also check declare symbols for cross-language ABI patterns (C module with C++ declares, etc.)
+    detectSecondaryLanguages(module, &secondaries);
+
+    if (secondaries.len > 0) {
+        return LanguageProfile.initMulti(dominant, confidence, winning_method, secondaries.constSlice());
+    }
+    return LanguageProfile.initSingle(dominant, confidence, winning_method);
+}
+
+/// T8: Detect secondary languages by scanning declare symbols for cross-language ABI patterns.
+/// This catches cases like C modules that declare C++ mangled symbols (_ZN...),
+/// or Rust modules with C-style declares.
+fn detectSecondaryLanguages(module: c.LLVMModuleRef, secondaries: *LanguageProfile.SecondaryLangList) void {
+    var func = c.LLVMGetFirstFunction(module);
+    while (func != null) : (func = c.LLVMGetNextFunction(func)) {
+        // Only scan declarations — defined functions are already counted by sampling
+        if (c.LLVMIsDeclaration(func) == 0) continue;
+
+        const name_ptr = c.LLVMGetValueName(func);
+        if (name_ptr == null) continue;
+        const name = std.mem.span(name_ptr);
+        if (name.len == 0) continue;
+
+        const detected_lang: Language = if (name.len > 3 and name[0] == '_' and name[1] == 'Z' and name[2] == 'N')
+            .cpp
+        else if (name.len > 2 and name[0] == '_' and name[1] == 'R')
+            .rust
+        else if (name.len > 0 and name[0] == '?')
+            .cpp
+        else
+            continue; // Not a cross-language declare pattern
+
+        // Add to secondaries if not already present
+        var already_present = false;
+        for (secondaries.constSlice()) |s| {
+            if (s == detected_lang) {
+                already_present = true;
+                break;
+            }
+        }
+        if (!already_present and secondaries.len < LanguageProfile.MAX_SECONDARY) {
+            secondaries.appendAssumeCapacity(detected_lang);
+        }
+    }
 }
 
 pub fn langToIndex(lang: Language) ?usize {
@@ -513,9 +644,9 @@ fn detectFromSampling(module: c.LLVMModuleRef) ?LanguageProfile {
 
     const confidence = @as(f32, @floatFromInt(max_count)) / @as(f32, @floatFromInt(total));
     if (confidence < data.MIN_SAMPLING_CONFIDENCE) {
-        return .{ .language = .unknown, .confidence = 0.3, .method = .sampling };
+        return LanguageProfile.initSingle(.unknown, 0.3, .sampling);
     }
-    return .{ .language = dominant, .confidence = confidence, .method = .sampling };
+    return LanguageProfile.initSingle(dominant, confidence, .sampling);
 }
 
 /// Detect language by scanning LLVM personality function attributes.
@@ -572,7 +703,7 @@ fn detectFromPersonality(module: c.LLVMModuleRef) ?LanguageProfile {
     if (max_score < data.MIN_PERSONALITY_SCORE) return null;
 
     const confidence = @min(max_score / (data.PERSONALITY_STRONG * @as(f32, @floatFromInt(total_votes))), 1.0);
-    return .{ .language = dominant, .confidence = confidence, .method = .personality };
+    return LanguageProfile.initSingle(dominant, confidence, .personality);
 }
 
 /// Detect language by scanning LLVM global variable name prefixes.
@@ -679,7 +810,7 @@ fn detectFromGlobals(module: c.LLVMModuleRef) ?LanguageProfile {
     if (max_score < data.MIN_GLOBALS_SCORE) return null;
 
     const confidence = @min(max_score / (data.GLOBAL_STRONG_WEIGHT * @as(f32, @floatFromInt(total_votes))), 1.0);
-    return .{ .language = dominant, .confidence = confidence, .method = .globals };
+    return LanguageProfile.initSingle(dominant, confidence, .globals);
 }
 
 /// Identify the language of an LLVM function value.

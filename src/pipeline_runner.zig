@@ -33,7 +33,7 @@ pub fn runSingleFileAnalysis(allocator: std.mem.Allocator, path: []const u8, con
     const source_lang = if (loader.getModule()) |module_ref|
         LanguageDetector.detectModuleLanguage(module_ref.raw, allocator)
     else
-        LanguageDetector.LanguageProfile{ .language = .unknown, .confidence = 0.0, .method = .unknown };
+        LanguageDetector.LanguageProfile.initSingle(.unknown, 0.0, .unknown);
 
     const source_lang_name = output_formatter.languageDisplayName(source_lang.language);
     log.info("[Language] Source: {s} (confidence: {:.1}%)\n", .{ source_lang_name, source_lang.confidence * 100 });

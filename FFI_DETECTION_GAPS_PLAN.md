@@ -316,9 +316,9 @@ pub const SymbolGraph = struct {
 | **T3** `SymbolGraph.build` | ✅ 完成 | Phase 1–4 完整（收集符号 → 构建 call sites → 语言索引 → export surface 检测） |
 | **T4** Export surface 检测 | ✅ 完成 | `detectExportSurfaces` 实现，支持 3 种曝光原因（c_abi_external_linkage / cxx_extern_c / callback_target） |
 | **T5** `ffi_detector.zig` 改造 | ✅ 完成 | 已接入 SymbolGraph + ExportSurfaceAnalyzer，替换了旧的 module-level 检测路径 |
-| **T6** `cross_lang_dataflow.zig` 接入 | ❌ 未实施 | 计划中的改造未执行 |
+| **T6** `cross_lang_dataflow.zig` 接入 | ✅ 完成 | `analyzeModuleUnified` 中 `func_lang` 改为 SymbolGraph per-symbol 语言（fallback module-level） |
 | **T7** `export_surface_analyzer.zig` | ✅ 完成 | 已创建并接入，在 ffi_detector.zig 中调用 |
-| **T8** 移除/降级 module-level 强判定 | ❌ 未实施 | 仍在使用 module-level 语言检测 |
+| **T8** 移除/降级 module-level 强判定 | ✅ 完成 | LanguageProfile 扩展 `secondary_languages` + `isMultiLanguage()`；`isCModule()` 多语言模块返回 false；`detectSecondaryLanguages()` 扫描 declare 符号 ABI 模式 |
 | **T9** CLI `--report-surfaces` 开关 | ✅ 完成 | 已在 CLI 选项中实现 |
 | **T10** 文档 + 回归 | 🔄 进行中 | 本文档更新 + 回归测试执行中 |
 

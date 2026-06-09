@@ -33,7 +33,7 @@ The main user-visible improvement is that findings should be easier to trust and
 | Cross-language free | — | 87% | ⚠️ |
 | Use-after-free | — | 80% | ⚠️ |
 | Buffer overflow | — | FFI size truncation + sprintf | ✅ |
-| Inline IR tests | — | 42 pass / 87 total (0 fail) | Cross-lang 27/27 ✅ |
+| Inline IR tests | — | 52 pass / 87 total (0 fail) | Cross-lang 27/27 ✅ |
 
 ## Included from 0.1.9
 

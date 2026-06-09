@@ -338,11 +338,7 @@ pub fn shouldAnalyzeZone(zone: zone_classifier.ZoneKind) bool {
 pub fn initModuleLanguage(self: *PassContext, module_ref: ?ModuleRef) void {
     if (self.language_detected) return;
     if (module_ref == null or self.module == null) {
-        self.module_language = .{
-            .language = .unknown,
-            .confidence = 0.0,
-            .method = .unknown,
-        };
+        self.module_language = language_detector.LanguageProfile.initSingle(.unknown, 0.0, .unknown);
         self.language_detected = true;
         return;
     }
@@ -353,11 +349,7 @@ pub fn initModuleLanguage(self: *PassContext, module_ref: ?ModuleRef) void {
         @as(c.LLVMModuleRef, @ptrFromInt(0));
 
     if (@intFromPtr(llvm_module) == 0) {
-        self.module_language = .{
-            .language = .unknown,
-            .confidence = 0.0,
-            .method = .unknown,
-        };
+        self.module_language = language_detector.LanguageProfile.initSingle(.unknown, 0.0, .unknown);
         self.language_detected = true;
         return;
     }
@@ -371,11 +363,7 @@ pub fn initModuleLanguage(self: *PassContext, module_ref: ?ModuleRef) void {
                 log.debug("[pass-types] LANG-OVERRIDE: Using default_lang={s} (auto-detection confidence too low)", .{
                     @tagName(default_lang),
                 });
-                self.module_language = .{
-                    .language = default_lang,
-                    .confidence = 0.8,
-                    .method = .unknown,
-                };
+                self.module_language = language_detector.LanguageProfile.initSingle(default_lang, 0.8, .unknown);
             }
         }
     }
@@ -389,11 +377,22 @@ pub fn initModuleLanguage(self: *PassContext, module_ref: ?ModuleRef) void {
         self.evidence = evidence_collector.getEvidence().*;
     }
 
-    log.debug("[pass-types] LANG-DETECT: module language = {s}, confidence = {d:.1}%, method = {s}", .{
-        @tagName(self.module_language.language),
-        self.module_language.confidence * 100,
-        @tagName(self.module_language.method),
-    });
+    // T8: Log secondary languages for multi-language modules
+    const sec_count = self.module_language.secondary_languages.len;
+    if (sec_count > 0) {
+        log.debug("[pass-types] LANG-DETECT: module language = {s}, confidence = {d:.1}%, method = {s}, secondary_languages = {}", .{
+            @tagName(self.module_language.language),
+            self.module_language.confidence * 100,
+            @tagName(self.module_language.method),
+            sec_count,
+        });
+    } else {
+        log.debug("[pass-types] LANG-DETECT: module language = {s}, confidence = {d:.1}%, method = {s}", .{
+            @tagName(self.module_language.language),
+            self.module_language.confidence * 100,
+            @tagName(self.module_language.method),
+        });
+    }
 }
 
 pub fn getModuleLanguage(self: *const PassContext) language_detector.LanguageProfile {
@@ -412,7 +411,18 @@ pub fn isZigModule(self: *const PassContext) bool {
     return self.module_language.language == .zig;
 }
 
+/// T8: A "C module" check now returns false when the module has secondary languages.
+/// This prevents skipping FFI boundary detection on mixed-language modules
+/// (e.g., C module with C++ declares, or C bridge calling C++ symbols).
+/// Use isCModuleStrict() for legacy behavior that ignores secondary languages.
 pub fn isCModule(self: *const PassContext) bool {
+    if (self.module_language.isMultiLanguage()) return false;
+    return self.module_language.language == .c or self.module_language.language == .cpp;
+}
+
+/// Legacy C module check that ignores secondary languages (T8).
+/// Use only for pure language identification, not FFI skip decisions.
+pub fn isCModuleStrict(self: *const PassContext) bool {
     return self.module_language.language == .c or self.module_language.language == .cpp;
 }
 

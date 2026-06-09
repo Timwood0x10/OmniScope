@@ -358,11 +358,7 @@ test "classifyCFunction - word boundary prevents FP" {
 }
 
 test "classifyFunctionWithEvidence - C++ STL mangled names -> .safe" {
-    const cpp_evidence = LanguageProfile{
-        .language = .cpp,
-        .confidence = 0.9,
-        .method = .sampling,
-    };
+    const cpp_evidence = LanguageProfile.initSingle(.cpp, 0.9, .sampling);
 
     try std.testing.expectEqual(
         ZoneKind.safe,
@@ -386,11 +382,7 @@ test "classifyFunctionWithEvidence - C++ STL mangled names -> .safe" {
 }
 
 test "classifyFunctionWithEvidence - C++ operator new/delete -> .safe" {
-    const cpp_evidence = LanguageProfile{
-        .language = .cpp,
-        .confidence = 0.85,
-        .method = .sampling,
-    };
+    const cpp_evidence = LanguageProfile.initSingle(.cpp, 0.85, .sampling);
 
     try std.testing.expectEqual(
         ZoneKind.safe,
@@ -404,11 +396,7 @@ test "classifyFunctionWithEvidence - C++ operator new/delete -> .safe" {
 }
 
 test "classifyFunctionWithEvidence - C++ user code still uses standard rules" {
-    const cpp_evidence = LanguageProfile{
-        .language = .cpp,
-        .confidence = 0.8,
-        .method = .sampling,
-    };
+    const cpp_evidence = LanguageProfile.initSingle(.cpp, 0.8, .sampling);
 
     try std.testing.expectEqual(
         ZoneKind.unsafe,
@@ -422,11 +410,7 @@ test "classifyFunctionWithEvidence - C++ user code still uses standard rules" {
 }
 
 test "classifyFunctionWithEvidence - Rust module with __rust_ intrinsics -> .runtime_internal" {
-    const rust_evidence = LanguageProfile{
-        .language = .rust,
-        .confidence = 0.95,
-        .method = .sampling,
-    };
+    const rust_evidence = LanguageProfile.initSingle(.rust, 0.95, .sampling);
 
     try std.testing.expectEqual(
         ZoneKind.runtime_internal,
@@ -445,11 +429,7 @@ test "classifyFunctionWithEvidence - Rust module with __rust_ intrinsics -> .run
 }
 
 test "classifyFunctionWithEvidence - C module with libc functions -> .safe" {
-    const c_evidence = LanguageProfile{
-        .language = .c,
-        .confidence = 0.9,
-        .method = .globals,
-    };
+    const c_evidence = LanguageProfile.initSingle(.c, 0.9, .globals);
 
     try std.testing.expectEqual(
         ZoneKind.safe,

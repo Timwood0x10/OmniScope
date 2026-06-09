@@ -236,6 +236,9 @@ pub const CrossLangDataFlow = struct {
 
         for (ctx.ir_store.function_list) |fir| {
             const func_name = fir.name;
+
+            // T6 NOTE: This legacy function is dead code (replaced by analyzeModuleUnified).
+            // Using module-level language as fallback since sym_graph is not in scope.
             const func_lang = ctx.getModuleLanguage().language;
 
             var store_map = std.AutoHashMap(u64, u64).init(ctx.allocator);
@@ -799,6 +802,9 @@ pub const CrossLangDataFlow = struct {
 
         for (ctx.ir_store.function_list) |fir| {
             const func_name = fir.name;
+
+            // T6 NOTE: This legacy function is dead code (replaced by analyzeModuleUnified).
+            // Using module-level language as fallback since sym_graph is not in scope.
             const func_lang = ctx.getModuleLanguage().language;
 
             for (fir.calls) |inst| {

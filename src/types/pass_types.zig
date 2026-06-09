@@ -136,7 +136,7 @@ pub const PassContext = struct {
             .registry_cache = std.StringHashMap(FunctionSemantics).init(allocator),
             .zone_cache = std.StringHashMap(zone_classifier.ZoneKind).init(allocator),
             .zone_stats = zone_classifier.ZoneStats{},
-            .module_language = .{ .language = .unknown, .confidence = 0.0, .method = .unknown },
+            .module_language = language_detector.LanguageProfile.initSingle(.unknown, 0.0, .unknown),
             .language_detected = false,
             .degraded_functions = std.atomic.Value(u32).init(0),
             .cross_lang_edges = std.ArrayList(CrossLangEdge).empty,

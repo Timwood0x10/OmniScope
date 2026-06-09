@@ -248,7 +248,7 @@ pub fn runMultiFileAnalysis(allocator: std.mem.Allocator, files: []const []const
         const lang_profile = if (loader.getModule()) |module_ref|
             LanguageDetector.detectModuleLanguage(module_ref.raw, allocator)
         else
-            LanguageDetector.LanguageProfile{ .language = .unknown, .confidence = 0.0, .method = .unknown };
+            LanguageDetector.LanguageProfile.initSingle(.unknown, 0.0, .unknown);
 
         try source_languages.append(allocator, lang_profile.language);
         log.info("  [{d}/{d}] Language: {s} ({:.0}% confidence)\n", .{

@@ -143,9 +143,6 @@ pub fn checkCrossLanguageFree(
     const free_lang = classifyFreeLanguage(callee_name);
     if (free_lang == null) return; // Not a known free function
 
-    // DEBUG: trace entry for C→Rust-cross_free diagnosis
-    std.debug.print("CROSS-LANG-ENTRY: callee={s} free_lang={?s} in {s}\n", .{ callee_name, free_lang, func_name });
-
     // Get the pointer argument (first argument of the free call).
     // LLVM C API operand layout for "call void @free(ptr %p)":
     //   operand 0 = %p (first argument), operand 1 = @free (callee)
@@ -356,12 +353,6 @@ pub fn checkCrossLanguageFree(
             }
         }
     }
-    // DEBUG: Diagnose why __rust_dealloc path2 doesn't trigger
-    if (pm_direct == null and ptr_info_opt == null) {
-        const pn = c.LLVMGetValueName(ptr_arg);
-        const pn_str = if (@intFromPtr(pn) != 0) std.mem.span(pn) else "(null)";
-        std.debug.print("CROSS-LANG-PATH2-NF: callee={s} ptr={s} — not in pointer_map & name-scan failed in {s}\n", .{ callee_name, pn_str, func_name });
-    }
     if (ptr_info_opt) |ptr_info| {
         if (ptr_info.source_inst) |src_inst| {
             var src_alloc_lang: ?[]const u8 = null;
@@ -383,7 +374,6 @@ pub fn checkCrossLanguageFree(
             }
 
             if (src_alloc_lang) |alloc_l| {
-                std.debug.print("CROSS-LANG-PATH2-HIT: callee={s} alloc_l={s} free_lang={?s} in {s}\n", .{ callee_name, alloc_l, free_lang, func_name });
                 const caller_is_zig = ctx.module_language.language == .zig;
                 const free_is_c = std.mem.eql(u8, free_lang.?, "c");
                 const alloc_is_zig = std.mem.eql(u8, alloc_l, "zig");
@@ -410,11 +400,7 @@ pub fn checkCrossLanguageFree(
                         return;
                     }
                 }
-            } else {
-                std.debug.print("CROSS-LANG-PATH2-NULL-ALLOC: callee={s} src_opcode={d} in {s}\n", .{ callee_name, @as(c.LLVMOpcode, src_opcode), func_name });
             }
-        } else {
-            std.debug.print("CROSS-LANG-PATH2-NOSRC: callee={s} — ptr_info found but source_inst=null in {s}\n", .{ callee_name, func_name });
         }
     }
 }
@@ -696,18 +682,6 @@ pub fn checkDoubleFreeViolation(
 
     const ptr_arg = c.LLVMGetOperand(inst, 0);
     const ptr_hash = @as(u64, @intFromPtr(ptr_arg));
-
-    // TEMP DEBUG: verify ptr_arg identity
-    {
-        const pn = c.LLVMGetValueName(ptr_arg);
-        std.debug.print("CROSS-LANG: callee={s} ptr_arg_name={s} ptr_hash=0x{x} pointer_map_size={} pm_hit={}\n", .{
-            callee_name,
-            if (@intFromPtr(pn) != 0) std.mem.span(pn) else "(null)",
-            ptr_hash,
-            pointer_map.count(),
-            pointer_map.get(ptr_arg) != null,
-        });
-    }
 
     const record = FreeSiteRecord{
         .bb_id = bb_id,
